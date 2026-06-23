@@ -76,7 +76,14 @@ const els = Object.fromEntries([
   ,"authScreen","loginForm","loginEmail","loginPassword","authError","accountButton"
   ,"activityCard","activityList","activityCount","expandSchedule","closeExpandedSchedule"
   ,"accountsPanel","accountList","accountCountLabel","refreshAccounts"
+  ,"mobileSyncStatus"
 ].map(id => [id, document.getElementById(id)]));
+
+function setSyncStatus(text, state = "connecting") {
+  els.lastSync.textContent = text;
+  els.mobileSyncStatus.textContent = text;
+  els.mobileSyncStatus.dataset.state = state;
+}
 
 function canEditEvents() { return !backendAvailable || ["admin", "editor"].includes(currentProfile.role); }
 function canManageTeam() { return !backendAvailable || currentProfile.role === "admin"; }
@@ -107,7 +114,7 @@ async function saveEvents(message = "排期已实时同步", changedEvent = null
       const { error } = await supabaseClient.from("events").upsert(rows);
       if (error) throw error;
     } catch (error) {
-      els.lastSync.textContent = "Supabase同步失败";
+      setSyncStatus("云端写入失败", "error");
       showToast(error.message || "同步失败");
       await loadEventsFromSupabase();
       return;
@@ -115,7 +122,7 @@ async function saveEvents(message = "排期已实时同步", changedEvent = null
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
   channel?.postMessage({ type: "events", events });
-  els.lastSync.textContent = "刚刚更新";
+  setSyncStatus("云端已同步", "online");
   showToast(message);
 }
 
@@ -167,7 +174,7 @@ async function connectBackend() {
   const config = window.APP_CONFIG || {};
   if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY || !window.supabase) {
     backendAvailable = false;
-    els.lastSync.textContent = "本机演示模式";
+    setSyncStatus("未连接云端 · 当前修改不会跨设备同步", "error");
     return;
   }
   supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
@@ -202,7 +209,7 @@ async function connectBackend() {
     if (!canEditEvents() && !document.querySelector(".read-only-banner")) {
       document.body.insertAdjacentHTML("beforeend", '<div class="read-only-banner">当前账号为只读权限</div>');
     }
-    els.lastSync.textContent = "Supabase实时连接";
+    setSyncStatus("云端已连接", "online");
     connectRealtimeStream();
     await checkSystemStatus();
     startSyncFallback();
@@ -225,7 +232,10 @@ function connectRealtimeStream() {
         TIMED_OUT: "实时连接超时 · 自动轮询",
         CLOSED: "实时连接已断开 · 自动轮询"
       };
-      els.lastSync.textContent = statusText[status] || "正在连接云端…";
+      setSyncStatus(
+        statusText[status] || "正在连接云端…",
+        status === "SUBSCRIBED" ? "online" : status === "CHANNEL_ERROR" ? "error" : "connecting"
+      );
     });
 }
 async function loadEventsFromSupabase() {
@@ -274,7 +284,7 @@ async function checkSystemStatus() {
   }
   const status = data[0];
   if (!status.audit_trigger_enabled) activityLogError = new Error("操作日志触发器未启用");
-  if (!status.events_realtime_enabled) els.lastSync.textContent = "实时表未启用 · 自动轮询";
+  if (!status.events_realtime_enabled) setSyncStatus("云端轮询同步 · Realtime未启用", "warning");
 }
 
 async function loadManagedAccounts() {
@@ -877,7 +887,7 @@ async function init() {
     showToast("日程已删除"); closeModal(); render();
   });
   channel && (channel.onmessage = ({data}) => {
-    if (data?.type === "events") { events = data.events; els.lastSync.textContent = "另一位成员刚刚更新"; render(); showToast("收到团队成员的实时更新"); }
+    if (data?.type === "events") { events = data.events; setSyncStatus("另一位成员刚刚更新", "online"); render(); showToast("收到团队成员的实时更新"); }
   });
   window.addEventListener("storage", e => {
     if (e.key === STORAGE_KEY && e.newValue) { events = JSON.parse(e.newValue); render(); }

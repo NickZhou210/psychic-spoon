@@ -8,10 +8,12 @@ const files = [
   "index.html", "styles.css", "app.js", "service-worker.js",
   "manifest.webmanifest", "icon.svg"
 ];
+const supabaseBrowserClient = path.join(root, "node_modules", "@supabase", "supabase-js", "dist", "umd", "supabase.js");
 
 await fs.rm(dist, { recursive: true, force: true });
 await fs.mkdir(dist, { recursive: true });
 for (const file of files) await fs.copyFile(path.join(root, file), path.join(dist, file));
+await fs.copyFile(supabaseBrowserClient, path.join(dist, "supabase.js"));
 
 const config = {
   SUPABASE_URL: process.env.SUPABASE_URL || "",
@@ -35,6 +37,9 @@ await fs.writeFile(path.join(dist, "_headers"), [
   "",
   "/styles.css",
   "  Cache-Control: no-store, must-revalidate",
+  "",
+  "/supabase.js",
+  "  Cache-Control: public, max-age=31536000, immutable",
   "",
   "/config.js",
   "  Cache-Control: no-store",
