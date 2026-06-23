@@ -223,6 +223,7 @@
       <div class="team-tabs">
         <button class="team-tab active" data-team-tab="members">成员管理</button>
         <button class="team-tab" data-team-tab="groups">小组管理</button>
+        <button class="team-tab" data-team-tab="accounts">账号权限</button>
       </div>
 
       <div class="team-panel" id="membersPanel">
@@ -241,7 +242,16 @@
         <div class="setting-list" id="groupList"></div>
       </div>
 
-      <div class="team-modal-note">成员和小组变更会实时同步给所有使用者。</div>
+      <div class="team-panel hidden" id="accountsPanel">
+        <div class="setting-toolbar">
+          <div><strong>账号绑定</strong><span id="accountCountLabel">读取登录账号中</span></div>
+          <button class="icon-button" type="button" id="refreshAccounts">刷新账号</button>
+        </div>
+        <div class="account-help">账号需先在 Supabase Authentication → Users 创建。然后在这里直接绑定成员和权限。</div>
+        <div class="setting-list account-setting-list" id="accountList"></div>
+      </div>
+
+      <div class="team-modal-note">成员、小组和账号权限变更均保存到云端。</div>
     </section>
   </div>
 

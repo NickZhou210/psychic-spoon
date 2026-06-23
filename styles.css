@@ -309,6 +309,21 @@ select { height: 38px; border: 1px solid var(--line); border-radius: 9px; backgr
 }
 .team-modal-note { padding: 8px 24px 20px; color: #98a2b3; font-size: 10px; }
 .empty-settings { padding: 30px; text-align: center; color: #98a2b3; font-size: 11px; }
+.account-help {
+  margin: 4px 0 12px; padding: 10px 12px; border-radius: 9px;
+  color: #475467; background: #f4f7ff; font-size: 10px; line-height: 1.5;
+}
+.account-setting-list { max-height: 450px; }
+.account-setting-row {
+  min-height: 82px; padding: 10px 12px; display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(150px, 1fr) minmax(135px, .8fr) auto;
+  align-items: end; gap: 10px; border-bottom: 1px solid var(--line);
+}
+.account-setting-row:last-child { border-bottom: 0; }
+.account-setting-row label { display: grid; gap: 5px; color: #667085; font-size: 9px; font-weight: 700; }
+.account-setting-row select { width: 100%; min-width: 0; }
+.account-setting-row .primary-button { min-height: 38px; }
+.account-email { align-self: center; }
 .nested-backdrop { z-index: 130; background: rgba(10,18,32,.55); }
 .compact-modal { width: min(470px, 100%); }
 .single-column-form { grid-template-columns: 1fr; }
@@ -413,6 +428,8 @@ select { height: 38px; border: 1px solid var(--line); border-radius: 9px; backgr
   .setting-list { max-height: 52vh; }
   .setting-row { align-items: flex-start; }
   .setting-actions { flex-direction: column; }
+  .account-setting-row { grid-template-columns: 1fr; align-items: stretch; padding: 13px; }
+  .account-setting-row .primary-button { width: 100%; }
   .inline-create-form, .group-form { grid-template-columns: 1fr; }
   .auth-screen { padding: 14px; align-items: end; }
   .auth-card { padding: 24px 20px calc(24px + env(safe-area-inset-bottom)); border-radius: 18px; }

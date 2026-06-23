@@ -7,6 +7,8 @@ let supabaseClient = null;
 let currentProfile = { role: "viewer", person_id: null, full_name: "" };
 let activityLogs = [];
 let activityLogError = null;
+let managedAccounts = [];
+let syncPollTimer = null;
 
 const seedPeople = [
   { id: "p1", name: "李涛", role: "项目负责人", dept: "业务一组", color: "#4778f5" },
@@ -72,6 +74,7 @@ const els = Object.fromEntries([
   ,"memberCountLabel","groupCountLabel"
   ,"authScreen","loginForm","loginEmail","loginPassword","authError","accountButton"
   ,"activityCard","activityList","activityCount","expandSchedule","closeExpandedSchedule"
+  ,"accountsPanel","accountList","accountCountLabel","refreshAccounts"
 ].map(id => [id, document.getElementById(id)]));
 
 function canEditEvents() { return !backendAvailable || ["admin", "editor"].includes(currentProfile.role); }
@@ -97,8 +100,6 @@ function loadGroups() {
 }
 async function saveEvents(message = "排期已实时同步", changedEvent = null) {
   if (!canEditEvents()) return showToast("当前账号为只读权限");
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-  channel?.postMessage({ type: "events", events });
   if (backendAvailable) {
     try {
       const rows = changedEvent ? [toEventRow(changedEvent)] : events.map(toEventRow);
@@ -107,9 +108,12 @@ async function saveEvents(message = "排期已实时同步", changedEvent = null
     } catch (error) {
       els.lastSync.textContent = "Supabase同步失败";
       showToast(error.message || "同步失败");
+      await loadEventsFromSupabase();
       return;
     }
   }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+  channel?.postMessage({ type: "events", events });
   els.lastSync.textContent = "刚刚更新";
   showToast(message);
 }
@@ -199,6 +203,8 @@ async function connectBackend() {
     }
     els.lastSync.textContent = "Supabase实时连接";
     connectRealtimeStream();
+    await checkSystemStatus();
+    startSyncFallback();
   } catch (error) {
     els.authError.textContent = error.message || "Supabase连接失败";
     throw error;
@@ -211,7 +217,15 @@ function connectRealtimeStream() {
     .on("postgres_changes", { event: "*", schema: "public", table: "people" }, loadTeamFromSupabase)
     .on("postgres_changes", { event: "*", schema: "public", table: "groups" }, loadTeamFromSupabase)
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "event_audit_logs" }, loadActivityLogs)
-    .subscribe(status => { els.lastSync.textContent = status === "SUBSCRIBED" ? "Supabase实时连接" : "正在连接云端…"; });
+    .subscribe(status => {
+      const statusText = {
+        SUBSCRIBED: "Supabase实时连接",
+        CHANNEL_ERROR: "实时连接异常 · 自动轮询",
+        TIMED_OUT: "实时连接超时 · 自动轮询",
+        CLOSED: "实时连接已断开 · 自动轮询"
+      };
+      els.lastSync.textContent = statusText[status] || "正在连接云端…";
+    });
 }
 async function loadEventsFromSupabase() {
   const { data, error } = await supabaseClient.from("events").select("*").order("start_at");
@@ -242,6 +256,80 @@ async function loadActivityLogs() {
   activityLogError = null;
   activityLogs = data || [];
   if (currentView === "activity") renderActivityLog();
+}
+
+function startSyncFallback() {
+  clearInterval(syncPollTimer);
+  syncPollTimer = setInterval(() => {
+    if (document.visibilityState === "visible") loadEventsFromSupabase();
+  }, 15000);
+}
+
+async function checkSystemStatus() {
+  const { data, error } = await supabaseClient.rpc("get_schedule_system_status");
+  if (error || !data?.[0]) {
+    activityLogError = new Error("操作日志数据库功能尚未安装");
+    return;
+  }
+  const status = data[0];
+  if (!status.audit_trigger_enabled) activityLogError = new Error("操作日志触发器未启用");
+  if (!status.events_realtime_enabled) els.lastSync.textContent = "实时表未启用 · 自动轮询";
+}
+
+async function loadManagedAccounts() {
+  if (!backendAvailable || !canManageTeam()) return;
+  els.accountList.innerHTML = `<div class="empty-settings">正在读取账号…</div>`;
+  const { data, error } = await supabaseClient.rpc("admin_list_accounts");
+  if (error) {
+    managedAccounts = [];
+    els.accountCountLabel.textContent = "账号管理功能尚未安装";
+    els.accountList.innerHTML = `<div class="empty-settings">请先执行最新的账号权限增量 SQL。</div>`;
+    return;
+  }
+  managedAccounts = data || [];
+  renderManagedAccounts();
+}
+
+function renderManagedAccounts() {
+  els.accountCountLabel.textContent = `共 ${managedAccounts.length} 个登录账号`;
+  els.accountList.innerHTML = managedAccounts.length ? managedAccounts.map(account => `
+    <div class="account-setting-row" data-user="${account.user_id}">
+      <div class="setting-main account-email">
+        <strong>${escapeHtml(account.email)}</strong>
+        <span>${account.person_name ? `已绑定：${escapeHtml(account.person_name)}` : "尚未绑定成员"}</span>
+      </div>
+      <label>对应成员
+        <select class="account-person">
+          <option value="">不绑定</option>
+          ${people.map(person => `<option value="${person.id}" ${person.id === account.person_id ? "selected" : ""}>${escapeHtml(person.name)} · ${escapeHtml(person.dept)}</option>`).join("")}
+        </select>
+      </label>
+      <label>权限
+        <select class="account-role">
+          <option value="viewer" ${account.role === "viewer" ? "selected" : ""}>只读 viewer</option>
+          <option value="editor" ${account.role === "editor" ? "selected" : ""}>可编辑 editor</option>
+          <option value="admin" ${account.role === "admin" ? "selected" : ""}>管理员 admin</option>
+        </select>
+      </label>
+      <button type="button" class="primary-button save-account-binding">保存</button>
+    </div>`).join("") : `<div class="empty-settings">尚未创建登录账号。</div>`;
+  document.querySelectorAll(".save-account-binding").forEach(button => button.addEventListener("click", () => {
+    saveAccountBinding(button.closest(".account-setting-row"));
+  }));
+}
+
+async function saveAccountBinding(row) {
+  const targetUserId = row.dataset.user;
+  const personId = row.querySelector(".account-person").value || null;
+  const role = row.querySelector(".account-role").value;
+  const { error } = await supabaseClient.rpc("admin_update_account", {
+    target_user_id: targetUserId,
+    target_person_id: personId,
+    target_role: role,
+  });
+  if (error) return showToast(error.message || "账号权限保存失败");
+  showToast("账号、成员和权限已绑定");
+  await loadManagedAccounts();
 }
 function startOfDay(date) { const d = new Date(date); d.setHours(0,0,0,0); return d; }
 function addDays(date, amount) { return new Date(startOfDay(date).getTime() + amount * DAY_MS); }
@@ -707,7 +795,10 @@ async function init() {
     document.querySelectorAll(".team-tab").forEach(tab => tab.classList.toggle("active", tab === button));
     els.membersPanel.classList.toggle("hidden", button.dataset.teamTab !== "members");
     els.groupsPanel.classList.toggle("hidden", button.dataset.teamTab !== "groups");
+    els.accountsPanel.classList.toggle("hidden", button.dataset.teamTab !== "accounts");
+    if (button.dataset.teamTab === "accounts") loadManagedAccounts();
   }));
+  els.refreshAccounts.addEventListener("click", loadManagedAccounts);
   els.memberForm.addEventListener("submit", async event => {
     event.preventDefault();
     if (!els.memberGroup.value) return showToast("请先创建一个小组");
@@ -795,6 +886,15 @@ async function init() {
       closeModal(); closeMemberEditor(); closeGroupEditor(); closeTeamModal();
       document.body.classList.remove("schedule-expanded");
     }
+  });
+  window.addEventListener("focus", () => {
+    if (backendAvailable) {
+      loadEventsFromSupabase();
+      if (currentView === "activity") loadActivityLogs();
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (backendAvailable && document.visibilityState === "visible") loadEventsFromSupabase();
   });
   els.expandSchedule.addEventListener("click", () => {
     document.body.classList.add("schedule-expanded");
