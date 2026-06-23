@@ -170,8 +170,10 @@ function bindLoginForm() {
         password: els.loginPassword.value,
       });
       if (error) throw error;
-      els.loginButton.textContent = "登录成功，正在进入…";
-      location.reload();
+      els.loginButton.textContent = "登录成功，正在加载数据…";
+      const connected = await connectBackend();
+      if (!connected) throw new Error("登录成功，但未能建立云端会话");
+      render();
     } catch (error) {
       els.authError.textContent = error.message || "登录失败，请重试";
       els.loginButton.disabled = false;
@@ -917,7 +919,7 @@ async function init() {
   });
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", event => {
-      if (event.data?.type === "K_LOUD_UPDATE_READY" && !reloadingForUpdate) {
+      if (event.data?.type === "K_LOUD_UPDATE_READY" && !reloadingForUpdate && els.authScreen.classList.contains("hidden")) {
         reloadingForUpdate = true;
         location.reload();
       }
