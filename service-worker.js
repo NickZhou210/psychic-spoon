@@ -1,12 +1,12 @@
-const CACHE = "k-loud-shell-v11";
+const CACHE = "k-loud-shell-v12";
 const SHELL = [
   "/",
   "/index.html",
-  "/styles.css?v=1.4.0",
-  "/app.js?v=1.4.0",
+  "/styles.css?v=1.4.1",
+  "/app.js?v=1.4.1",
   "/supabase.js?v=2.108.2",
-  "/manifest.webmanifest?v=1.4.0",
-  "/icon.svg?v=1.4.0"
+  "/manifest.webmanifest?v=1.4.1",
+  "/icon.svg?v=1.4.1"
 ];
 
 self.addEventListener("install", event => {

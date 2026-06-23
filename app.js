@@ -32,7 +32,7 @@ const els = Object.fromEntries([
   ,"authScreen","loginForm","loginEmail","loginPassword","authError","accountButton"
   ,"activityCard","activityList","activityCount","expandSchedule","closeExpandedSchedule"
   ,"accountsPanel","accountList","accountCountLabel","refreshAccounts"
-  ,"mobileSyncStatus"
+  ,"mobileSyncStatus","loginButton"
 ].map(id => [id, document.getElementById(id)]));
 
 function setSyncStatus(text, state = "connecting") {
@@ -107,11 +107,8 @@ async function connectBackend() {
   const { data: { session } } = await supabaseClient.auth.getSession();
   if (!session) {
     els.authScreen.classList.remove("hidden");
-    await new Promise(resolve => {
-      const listener = supabaseClient.auth.onAuthStateChange((_event, nextSession) => {
-        if (nextSession) { listener.data.subscription.unsubscribe(); resolve(); }
-      });
-    });
+    setSyncStatus("等待登录云端账号", "connecting");
+    return false;
   }
   try {
     els.authScreen.classList.add("hidden");
@@ -137,6 +134,7 @@ async function connectBackend() {
     connectRealtimeStream();
     await checkSystemStatus();
     startSyncFallback();
+    return true;
   } catch (error) {
     backendAvailable = false;
     els.authScreen.classList.remove("hidden");
@@ -144,6 +142,33 @@ async function connectBackend() {
     setSyncStatus("云端数据层不可用", "error");
     throw error;
   }
+}
+
+function bindLoginForm() {
+  els.loginForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    els.authError.textContent = "";
+    els.loginButton.disabled = true;
+    els.loginButton.textContent = "登录中…";
+    try {
+      const config = window.APP_CONFIG || {};
+      if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY || !window.supabase) {
+        throw new Error("云端配置缺失，请联系管理员");
+      }
+      supabaseClient ||= window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+      const { error } = await supabaseClient.auth.signInWithPassword({
+        email: els.loginEmail.value.trim(),
+        password: els.loginPassword.value,
+      });
+      if (error) throw error;
+      els.loginButton.textContent = "登录成功，正在进入…";
+      location.reload();
+    } catch (error) {
+      els.authError.textContent = error.message || "登录失败，请重试";
+      els.loginButton.disabled = false;
+      els.loginButton.textContent = "登录";
+    }
+  });
 }
 
 function connectRealtimeStream() {
@@ -724,6 +749,7 @@ function escapeHtml(value = "") {
 function escapeAttribute(value = "") { return escapeHtml(value); }
 
 async function init() {
+  bindLoginForm();
   refreshPeopleControls();
   els.rangeSelector.querySelectorAll("button[data-days]").forEach(button => {
     button.classList.toggle("active", Number(button.dataset.days) === days);
@@ -874,20 +900,6 @@ async function init() {
     deferredInstallPrompt = null;
     document.getElementById("installButton").classList.add("hidden");
   });
-  els.loginForm.addEventListener("submit", async event => {
-    event.preventDefault();
-    els.authError.textContent = "";
-    const config = window.APP_CONFIG || {};
-    if (!supabaseClient && config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
-      supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
-    }
-    if (!supabaseClient) return els.authError.textContent = "尚未配置Supabase环境变量";
-    const { error } = await supabaseClient.auth.signInWithPassword({
-      email: els.loginEmail.value.trim(),
-      password: els.loginPassword.value,
-    });
-    if (error) els.authError.textContent = error.message;
-  });
   els.accountButton.addEventListener("click", async () => {
     if (!backendAvailable) return showToast("云端尚未连接");
     if (!confirm(`当前账号：${currentProfile.full_name || "团队成员"}。是否退出登录？`)) return;
@@ -907,7 +919,8 @@ async function init() {
       if (document.visibilityState === "visible") registration.update();
     });
   }
-  await connectBackend();
+  const connected = await connectBackend();
+  if (!connected) return;
   render();
 }
 init();

@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>K-Loud</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=1.4.0" />
-  <link rel="icon" href="./icon.svg?v=1.4.0" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=1.4.0" />
+  <link rel="manifest" href="./manifest.webmanifest?v=1.4.1" />
+  <link rel="icon" href="./icon.svg?v=1.4.1" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css?v=1.4.1" />
 </head>
 <body>
   <div class="auth-screen hidden" id="authScreen">
@@ -22,7 +22,7 @@
       </div>
       <label>邮箱<input type="email" id="loginEmail" required autocomplete="email" placeholder="name@company.com" /></label>
       <label>密码<input type="password" id="loginPassword" required autocomplete="current-password" placeholder="请输入密码" /></label>
-      <button class="primary-button auth-submit" type="submit">登录</button>
+      <button class="primary-button auth-submit" id="loginButton" type="submit">登录</button>
       <div class="auth-error" id="authError"></div>
     </form>
   </div>
@@ -63,7 +63,7 @@
     <main class="main-content">
       <header class="topbar">
         <div>
-          <div class="eyebrow">工作排期总览 · v1.4.0</div>
+          <div class="eyebrow">工作排期总览 · v1.4.1</div>
           <h1 id="pageTitle">团队实时排期</h1>
           <div class="mobile-sync-status" id="mobileSyncStatus">正在检查云端连接…</div>
         </div>
@@ -296,7 +296,7 @@
 
   <div class="toast" id="toast"></div>
   <script src="./supabase.js?v=2.108.2"></script>
-  <script src="./config.js?v=1.4.0"></script>
-  <script src="./app.js?v=1.4.0"></script>
+  <script src="./config.js?v=1.4.1"></script>
+  <script src="./app.js?v=1.4.1"></script>
 </body>
 </html>
