@@ -50,7 +50,7 @@ const seedEvents = [
 ].map(([id,title,ownerId,start,end,status,city,type,venue,notes]) => ({id,title,ownerId,start,end,status,city,type,venue,notes}));
 
 let events = loadEvents();
-let days = 14;
+let days = window.matchMedia("(max-width: 760px)").matches ? 7 : 14;
 let rangeStart = startOfDay(new Date("2026-06-23T00:00:00"));
 let enabledStatuses = new Set(["confirmed", "pending", "progress", "draft"]);
 let dragState = null;
@@ -603,6 +603,9 @@ function escapeAttribute(value = "") { return escapeHtml(value); }
 
 async function init() {
   refreshPeopleControls();
+  els.rangeSelector.querySelectorAll("button[data-days]").forEach(button => {
+    button.classList.toggle("active", Number(button.dataset.days) === days);
+  });
   document.querySelectorAll(".filter-check input").forEach(input => input.addEventListener("change", () => {
     input.checked ? enabledStatuses.add(input.value) : enabledStatuses.delete(input.value); render();
   }));
