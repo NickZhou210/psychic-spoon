@@ -9,6 +9,7 @@ let activityLogs = [];
 let activityLogError = null;
 let managedAccounts = [];
 let syncPollTimer = null;
+let reloadingForUpdate = false;
 
 const seedPeople = [
   { id: "p1", name: "李涛", role: "项目负责人", dept: "业务一组", color: "#4778f5" },
@@ -933,7 +934,19 @@ async function init() {
     await supabaseClient.auth.signOut();
     location.reload();
   });
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js");
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", event => {
+      if (event.data?.type === "K_LOUD_UPDATE_READY" && !reloadingForUpdate) {
+        reloadingForUpdate = true;
+        location.reload();
+      }
+    });
+    const registration = await navigator.serviceWorker.register("/service-worker.js", { updateViaCache: "none" });
+    registration.update();
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") registration.update();
+    });
+  }
   await connectBackend();
   render();
 }

@@ -1,4 +1,4 @@
-const CACHE = "k-loud-shell-v7";
+const CACHE = "k-loud-shell-v8";
 const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", event => {
@@ -7,7 +7,12 @@ self.addEventListener("install", event => {
 });
 
 self.addEventListener("activate", event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))));
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(() => self.clients.matchAll({ type: "window" }))
+      .then(clients => clients.forEach(client => client.postMessage({ type: "K_LOUD_UPDATE_READY", version: CACHE })))
+  );
   self.clients.claim();
 });
 
