@@ -30,4 +30,6 @@ await fs.writeFile(path.join(dist, "_headers"), [
   "/config.js",
   "  Cache-Control: no-store",
 ].join("\n"));
+await fs.writeFile(path.join(dist, "_redirects"), "# No redirect rules for Workers assets deployment.\n");
+console.log("Dist files:", (await fs.readdir(dist)).sort().join(", "));
 console.log(`Built Cloudflare Pages output in ${dist}`);
