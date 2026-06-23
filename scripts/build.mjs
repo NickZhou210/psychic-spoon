@@ -16,8 +16,8 @@ for (const file of files) await fs.copyFile(path.join(root, file), path.join(dis
 await fs.copyFile(supabaseBrowserClient, path.join(dist, "supabase.js"));
 
 const config = {
-  SUPABASE_URL: process.env.SUPABASE_URL || "",
-  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || ""
+  SUPABASE_URL: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "",
+  SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ""
 };
 await fs.writeFile(path.join(dist, "config.js"), `window.APP_CONFIG = ${JSON.stringify(config)};\n`);
 await fs.writeFile(path.join(dist, "_headers"), [

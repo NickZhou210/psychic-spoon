@@ -1,5 +1,20 @@
 # K-Loud
 
+## 云端数据架构
+
+业务数据只保存在 Supabase：
+
+- `teams`：团队与小组配置
+- `members`：团队成员
+- `projects`：项目资料
+- `assignments`：成员排班
+
+浏览器本地不保存业务数据，也不会在云端连接失败时回退到示例数据。
+
+现有项目升级时，在 Supabase SQL Editor 完整执行：
+
+`supabase/migrations/202606240003_cloud_data_model.sql`
+
 基于Cloudflare Pages与Supabase的团队实时排期PWA。
 
 ## 架构
@@ -32,8 +47,8 @@
 增加环境变量：
 
 ```text
-SUPABASE_URL=https://你的项目.supabase.co
-SUPABASE_ANON_KEY=你的Publishable或Anon Key
+VITE_SUPABASE_URL=https://你的项目.supabase.co
+VITE_SUPABASE_ANON_KEY=你的Publishable或Anon Key
 ```
 
 不要在前端配置`service_role`密钥。
@@ -41,8 +56,8 @@ SUPABASE_ANON_KEY=你的Publishable或Anon Key
 ## 本地构建
 
 ```bash
-SUPABASE_URL="https://你的项目.supabase.co" \
-SUPABASE_ANON_KEY="你的公开Key" \
+VITE_SUPABASE_URL="https://你的项目.supabase.co" \
+VITE_SUPABASE_ANON_KEY="你的公开Key" \
 npm run build
 ```
 

@@ -1,62 +1,18 @@
 const DAY_MS = 86400000;
-const STORAGE_KEY = "team-schedule-dashboard-v1";
-const channel = "BroadcastChannel" in window ? new BroadcastChannel("team-schedule-live") : null;
 let backendAvailable = false;
 let deferredInstallPrompt = null;
 let supabaseClient = null;
-let currentProfile = { role: "viewer", person_id: null, full_name: "" };
+let currentProfile = { role: "viewer", member_id: null, team_id: null, full_name: "" };
 let activityLogs = [];
 let activityLogError = null;
 let managedAccounts = [];
 let syncPollTimer = null;
 let reloadingForUpdate = false;
-
-const seedPeople = [
-  { id: "p1", name: "李涛", role: "项目负责人", dept: "业务一组", color: "#4778f5" },
-  { id: "p2", name: "安琪", role: "项目执行", dept: "业务一组", color: "#ee6a8a" },
-  { id: "p3", name: "董山", role: "项目负责人", dept: "业务二组", color: "#8b5cf6" },
-  { id: "p4", name: "许勇", role: "项目执行", dept: "业务二组", color: "#16a085" },
-  { id: "p5", name: "黄家明", role: "统筹", dept: "演出组", color: "#f59e0b" },
-  { id: "p6", name: "刘洋", role: "项目负责人", dept: "演出组", color: "#12a36d" },
-  { id: "p7", name: "王冬", role: "项目执行", dept: "演出组", color: "#3b82f6" },
-  { id: "p8", name: "马文钊", role: "项目执行", dept: "业务二组", color: "#e879f9" },
-  { id: "p9", name: "石头", role: "现场执行", dept: "演出组", color: "#64748b" },
-  { id: "p10", name: "海宝", role: "拍摄执行", dept: "内容组", color: "#ef4444" },
-  { id: "p11", name: "耿伊扬", role: "现场执行", dept: "演出组", color: "#06b6d4" },
-  { id: "p12", name: "李沛", role: "商务统筹", dept: "商务组", color: "#7c3aed" },
-  { id: "p13", name: "大彬彬", role: "项目执行", dept: "内容组", color: "#f97316" },
-  { id: "p14", name: "许景", role: "项目执行", dept: "商务组", color: "#0891b2" },
-  { id: "p15", name: "马文倒", role: "现场执行", dept: "演出组", color: "#4f46e5" },
-];
-let people = loadPeople();
-const seedGroups = ["业务一组", "业务二组", "演出组", "内容组", "商务组"];
-let teamGroups = loadGroups();
-
-const seedEvents = [
-  ["e1","品牌直播彩排","p1","2026-06-23T10:00","2026-06-24T18:00","progress","北京","直播","朝阳摄影棚",""],
-  ["e2","品牌直播彩排","p2","2026-06-23T10:00","2026-06-24T18:00","progress","北京","直播","朝阳摄影棚",""],
-  ["e3","商业活动","p3","2026-06-25T09:00","2026-06-25T19:00","pending","成都","商演","高新区会展中心","等待客户最终流程"],
-  ["e4","音乐节演出","p5","2026-06-24T14:00","2026-06-24T23:00","confirmed","上海","音乐节","浦东户外舞台",""],
-  ["e5","巡演重庆站","p6","2026-06-26T12:00","2026-06-28T23:00","confirmed","重庆","演唱会","华熙LIVE","含进场和彩排"],
-  ["e6","巡演重庆站","p7","2026-06-26T12:00","2026-06-28T23:00","confirmed","重庆","演唱会","华熙LIVE",""],
-  ["e7","短视频拍摄","p4","2026-06-28T08:00","2026-06-28T20:00","draft","厦门","拍摄","环岛路摄影基地",""],
-  ["e8","商务晚宴","p2","2026-06-29T18:00","2026-06-29T22:00","confirmed","深圳","商务","福田会展中心",""],
-  ["e9","品牌发布会","p1","2026-06-26T15:00","2026-06-26T21:00","confirmed","杭州","发布会","国际博览中心",""],
-  ["e10","音乐节联排","p5","2026-06-30T13:00","2026-06-30T19:00","pending","沈阳","音乐节","奥体中心",""],
-  ["e11","艺人采访","p8","2026-06-27T10:00","2026-06-27T17:00","confirmed","上海","商务","静安演播室",""],
-  ["e12","巡演重庆站","p9","2026-06-26T12:00","2026-06-28T23:00","confirmed","重庆","演唱会","华熙LIVE",""],
-  ["e13","物料拍摄","p10","2026-06-25T08:00","2026-06-26T18:00","confirmed","北京","拍摄","怀柔摄影棚",""],
-  ["e14","音乐节执行","p11","2026-06-30T08:00","2026-07-01T23:00","confirmed","沈阳","音乐节","奥体中心",""],
-  ["e15","客户提案","p12","2026-06-24T09:00","2026-06-24T16:00","pending","北京","商务","国贸中心",""],
-  ["e16","艺人定妆","p13","2026-06-27T09:00","2026-06-27T18:00","confirmed","上海","拍摄","徐汇摄影棚",""],
-  ["e17","品牌沟通会","p14","2026-06-25T14:00","2026-06-25T18:00","confirmed","线上","商务","腾讯会议",""],
-  ["e18","现场踏勘","p15","2026-06-29T10:00","2026-06-29T17:00","draft","重庆","演唱会","华熙LIVE",""],
-  ["e19","紧急补拍","p1","2026-06-26T13:00","2026-06-26T19:00","pending","杭州","拍摄","国际博览中心","与发布会撞期"],
-].map(([id,title,ownerId,start,end,status,city,type,venue,notes]) => ({id,title,ownerId,start,end,status,city,type,venue,notes}));
-
-let events = loadEvents();
+let people = [];
+let teamGroups = [];
+let events = [];
 let days = window.matchMedia("(max-width: 760px)").matches ? 7 : 14;
-let rangeStart = startOfDay(new Date("2026-06-23T00:00:00"));
+let rangeStart = startOfDay(new Date());
 let enabledStatuses = new Set(["confirmed", "pending", "progress", "draft"]);
 let dragState = null;
 let currentView = "overview";
@@ -85,86 +41,53 @@ function setSyncStatus(text, state = "connecting") {
   els.mobileSyncStatus.dataset.state = state;
 }
 
-function canEditEvents() { return !backendAvailable || ["admin", "editor"].includes(currentProfile.role); }
-function canManageTeam() { return !backendAvailable || currentProfile.role === "admin"; }
+function canEditEvents() { return backendAvailable && ["admin", "editor"].includes(currentProfile.role); }
+function canManageTeam() { return backendAvailable && currentProfile.role === "admin"; }
 
-function loadEvents() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return Array.isArray(saved) ? saved : seedEvents;
-  } catch { return seedEvents; }
-}
-function loadPeople() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(`${STORAGE_KEY}-people`));
-    return Array.isArray(saved) && saved.length ? saved : seedPeople;
-  } catch { return seedPeople; }
-}
-function loadGroups() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(`${STORAGE_KEY}-groups`));
-    return Array.isArray(saved) ? saved : seedGroups;
-  } catch { return seedGroups; }
-}
-async function saveEvents(message = "排期已实时同步", changedEvent = null) {
+async function saveEvents(message = "排期已实时同步", changedEvent) {
   if (!canEditEvents()) return showToast("当前账号为只读权限");
-  if (backendAvailable) {
-    try {
-      const rows = changedEvent ? [toEventRow(changedEvent)] : events.map(toEventRow);
-      const { error } = await supabaseClient.from("events").upsert(rows);
-      if (error) throw error;
-    } catch (error) {
-      setSyncStatus("云端写入失败", "error");
-      showToast(error.message || "同步失败");
-      await loadEventsFromSupabase();
-      return;
+  try {
+    const { data, error } = await supabaseClient.rpc("save_schedule", {
+      p_assignment_id: changedEvent.id || null,
+      p_project_id: changedEvent.projectId || null,
+      p_member_id: changedEvent.ownerId,
+      p_title: changedEvent.title,
+      p_start_at: changedEvent.start,
+      p_end_at: changedEvent.end,
+      p_status: changedEvent.status,
+      p_city: changedEvent.city || "",
+      p_business_type: changedEvent.type || "未分类",
+      p_venue: changedEvent.venue || "",
+      p_notes: changedEvent.notes || "",
+    });
+    if (error) throw error;
+    if (!changedEvent.id && data?.[0]) {
+      changedEvent.id = data[0].assignment_id;
+      changedEvent.projectId = data[0].project_id;
     }
+  } catch (error) {
+    setSyncStatus("云端写入失败", "error");
+    showToast(error.message || "同步失败");
+    await loadCloudData();
+    return false;
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-  channel?.postMessage({ type: "events", events });
+  await loadCloudData();
   setSyncStatus("云端已同步", "online");
   showToast(message);
+  return true;
 }
 
-async function saveTeam(message = "团队设置已同步") {
+async function saveTeamGroups(message = "小组设置已同步") {
   if (!canManageTeam()) return showToast("只有管理员可以修改团队设置");
-  localStorage.setItem(`${STORAGE_KEY}-people`, JSON.stringify(people));
-  localStorage.setItem(`${STORAGE_KEY}-groups`, JSON.stringify(teamGroups));
-  if (backendAvailable) {
-    try {
-      const { error: groupError } = await supabaseClient.from("groups").upsert(teamGroups.map(name => ({ name })));
-      if (groupError) throw groupError;
-      const { error: peopleError } = await supabaseClient.from("people").upsert(people.map(toPersonRow));
-      if (peopleError) throw peopleError;
-    } catch (error) {
-      showToast(error.message || "团队设置同步失败");
-      return;
-    }
+  const { error } = await supabaseClient.from("teams").update({ groups: groups() }).eq("id", currentProfile.team_id);
+  if (error) {
+    await loadCloudData();
+    return showToast(error.message || "小组设置同步失败");
   }
   showToast(message);
   refreshPeopleControls();
   renderTeamSettings();
   render();
-}
-
-function toEventRow(event) {
-  return {
-    id: event.id, title: event.title, owner_id: event.ownerId,
-    start_at: event.start, end_at: event.end, status: event.status,
-    city: event.city || "", business_type: event.type || "未分类",
-    venue: event.venue || "", notes: event.notes || ""
-  };
-}
-function fromEventRow(row) {
-  return {
-    id: row.id, title: row.title, ownerId: row.owner_id,
-    start: String(row.start_at).slice(0,16), end: String(row.end_at).slice(0,16),
-    status: row.status, city: row.city || "", type: row.business_type || "未分类",
-    venue: row.venue || "", notes: row.notes || ""
-  };
-}
-function toPersonRow(person) {
-  return { id: person.id, name: person.name, role: person.role, group_name: person.dept, color: person.color };
 }
 function fromPersonRow(row) {
   return { id: row.id, name: row.name, role: row.role, dept: row.group_name, color: row.color };
@@ -174,8 +97,11 @@ async function connectBackend() {
   const config = window.APP_CONFIG || {};
   if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY || !window.supabase) {
     backendAvailable = false;
-    setSyncStatus("未连接云端 · 当前修改不会跨设备同步", "error");
-    return;
+    els.authScreen.classList.remove("hidden");
+    els.authError.textContent = "云端配置缺失：请在 Cloudflare Pages 设置 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY";
+    els.loginForm.querySelector("button[type='submit']").disabled = true;
+    setSyncStatus("云端配置缺失 · 系统已停止加载", "error");
+    throw new Error("Supabase environment variables are missing");
   }
   supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
   const { data: { session } } = await supabaseClient.auth.getSession();
@@ -190,19 +116,17 @@ async function connectBackend() {
   try {
     els.authScreen.classList.add("hidden");
     const { data: { user } } = await supabaseClient.auth.getUser();
-    const [{ data: profile, error: profileError }, { data: eventRows, error: eventError }, { data: personRows, error: peopleError }, { data: groupRows, error: groupError }] = await Promise.all([
-      supabaseClient.from("profiles").select("id,full_name,role,person_id").eq("id", user.id).single(),
-      supabaseClient.from("events").select("*").order("start_at"),
-      supabaseClient.from("people").select("*").order("name"),
-      supabaseClient.from("groups").select("name").order("name"),
-    ]);
-    if (profileError || eventError || peopleError || groupError) throw profileError || eventError || peopleError || groupError;
+    const { data: profile, error: profileError } = await supabaseClient
+      .from("profiles")
+      .select("id,full_name,role,team_id,member_id")
+      .eq("id", user.id)
+      .single();
+    if (profileError) throw profileError;
+    if (!profile.team_id) throw new Error("当前账号尚未绑定团队，请联系管理员");
     currentProfile = profile;
-    currentUserId = profile.person_id;
-    events = eventRows.map(fromEventRow);
-    people = personRows.map(fromPersonRow);
-    teamGroups = groupRows.map(row => row.name);
+    currentUserId = profile.member_id;
     backendAvailable = true;
+    await loadCloudData();
     els.accountButton.title = `${profile.full_name || user.email || "团队账号"} · 点击退出`;
     document.getElementById("teamSettingsButton").classList.toggle("hidden", !canManageTeam());
     document.getElementById("addEventButton").classList.toggle("hidden", !canEditEvents());
@@ -214,16 +138,19 @@ async function connectBackend() {
     await checkSystemStatus();
     startSyncFallback();
   } catch (error) {
+    backendAvailable = false;
+    els.authScreen.classList.remove("hidden");
     els.authError.textContent = error.message || "Supabase连接失败";
+    setSyncStatus("云端数据层不可用", "error");
     throw error;
   }
 }
 
 function connectRealtimeStream() {
   supabaseClient.channel("schedule-live")
-    .on("postgres_changes", { event: "*", schema: "public", table: "events" }, loadEventsFromSupabase)
-    .on("postgres_changes", { event: "*", schema: "public", table: "people" }, loadTeamFromSupabase)
-    .on("postgres_changes", { event: "*", schema: "public", table: "groups" }, loadTeamFromSupabase)
+    .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, loadCloudData)
+    .on("postgres_changes", { event: "*", schema: "public", table: "members" }, loadCloudData)
+    .on("postgres_changes", { event: "*", schema: "public", table: "assignments" }, loadCloudData)
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "event_audit_logs" }, loadActivityLogs)
     .subscribe(status => {
       const statusText = {
@@ -239,16 +166,43 @@ function connectRealtimeStream() {
     });
 }
 async function loadEventsFromSupabase() {
-  const { data, error } = await supabaseClient.from("events").select("*").order("start_at");
-  if (!error) { events = data.map(fromEventRow); render(); }
+  await loadCloudData();
 }
 async function loadTeamFromSupabase() {
-  const [{ data: personRows }, { data: groupRows }] = await Promise.all([
-    supabaseClient.from("people").select("*").order("name"),
-    supabaseClient.from("groups").select("name").order("name")
+  await loadCloudData();
+}
+async function loadCloudData() {
+  if (!backendAvailable || !currentProfile.team_id) return;
+  const [{ data: team, error: teamError }, { data: memberRows, error: memberError }, { data: projectRows, error: projectError }, { data: assignmentRows, error: assignmentError }] = await Promise.all([
+    supabaseClient.from("teams").select("id,name,groups").eq("id", currentProfile.team_id).single(),
+    supabaseClient.from("members").select("*").order("name"),
+    supabaseClient.from("projects").select("*"),
+    supabaseClient.from("assignments").select("*").order("start_at"),
   ]);
-  people = (personRows || []).map(fromPersonRow);
-  teamGroups = (groupRows || []).map(row => row.name);
+  const error = teamError || memberError || projectError || assignmentError;
+  if (error) {
+    setSyncStatus("云端数据读取失败", "error");
+    throw error;
+  }
+  people = (memberRows || []).map(fromPersonRow);
+  teamGroups = Array.isArray(team.groups) ? team.groups : [];
+  const projectsById = new Map((projectRows || []).map(project => [project.id, project]));
+  events = (assignmentRows || []).map(assignment => {
+    const project = projectsById.get(assignment.project_id);
+    return {
+      id: assignment.id,
+      projectId: assignment.project_id,
+      title: project?.title || "未命名项目",
+      ownerId: assignment.member_id,
+      start: String(assignment.start_at).slice(0,16),
+      end: String(assignment.end_at).slice(0,16),
+      status: assignment.status,
+      city: project?.city || "",
+      type: project?.business_type || "未分类",
+      venue: project?.venue || "",
+      notes: project?.notes || "",
+    };
+  });
   refreshPeopleControls(); renderTeamSettings(); render();
 }
 async function loadActivityLogs() {
@@ -284,7 +238,9 @@ async function checkSystemStatus() {
   }
   const status = data[0];
   if (!status.audit_trigger_enabled) activityLogError = new Error("操作日志触发器未启用");
-  if (!status.events_realtime_enabled) setSyncStatus("云端轮询同步 · Realtime未启用", "warning");
+  if (!status.assignments_realtime_enabled || !status.projects_realtime_enabled || !status.members_realtime_enabled) {
+    setSyncStatus("云端轮询同步 · Realtime未完整启用", "warning");
+  }
 }
 
 async function loadManagedAccounts() {
@@ -307,12 +263,12 @@ function renderManagedAccounts() {
     <div class="account-setting-row" data-user="${account.user_id}">
       <div class="setting-main account-email">
         <strong>${escapeHtml(account.email)}</strong>
-        <span>${account.person_name ? `已绑定：${escapeHtml(account.person_name)}` : "尚未绑定成员"}</span>
+        <span>${account.member_name ? `已绑定：${escapeHtml(account.member_name)}` : "尚未绑定成员"}</span>
       </div>
       <label>对应成员
         <select class="account-person">
           <option value="">不绑定</option>
-          ${people.map(person => `<option value="${person.id}" ${person.id === account.person_id ? "selected" : ""}>${escapeHtml(person.name)} · ${escapeHtml(person.dept)}</option>`).join("")}
+          ${people.map(person => `<option value="${person.id}" ${person.id === account.member_id ? "selected" : ""}>${escapeHtml(person.name)} · ${escapeHtml(person.dept)}</option>`).join("")}
         </select>
       </label>
       <label>权限
@@ -335,7 +291,7 @@ async function saveAccountBinding(row) {
   const role = row.querySelector(".account-role").value;
   const { error } = await supabaseClient.rpc("admin_update_account", {
     target_user_id: targetUserId,
-    target_person_id: personId,
+    target_member_id: personId,
     target_role: role,
   });
   if (error) return showToast(error.message || "账号权限保存失败");
@@ -599,7 +555,9 @@ function toLocalInput(date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 }
 
-function openModal(event, ownerId = people[0].id, date = isoDate(new Date())) {
+function openModal(event, ownerId = null, date = isoDate(new Date())) {
+  if (!people.length) return showToast("请先在团队设置中添加成员");
+  ownerId ||= people[0].id;
   els.eventModal.classList.remove("hidden");
   els.eventId.value = event?.id || "";
   els.modalTitle.textContent = event ? "编辑日程" : "新建日程";
@@ -730,14 +688,10 @@ async function deleteMember(id) {
     return;
   }
   if (!confirm(`确定删除成员“${person.name}”吗？`)) return;
-  if (backendAvailable) {
-    const { error } = await supabaseClient.from("people").delete().eq("id", id);
-    if (error) return showToast(error.message);
-  }
-  people = people.filter(item => item.id !== id);
-  localStorage.setItem(`${STORAGE_KEY}-people`, JSON.stringify(people));
+  const { error } = await supabaseClient.from("members").delete().eq("id", id);
+  if (error) return showToast(error.message);
+  await loadCloudData();
   showToast("成员已删除");
-  refreshPeopleControls(); renderTeamSettings(); render();
 }
 
 function editGroup(group) {
@@ -758,12 +712,8 @@ async function deleteGroup(group) {
     return;
   }
   if (!confirm(`确定删除空小组“${group}”吗？`)) return;
-  if (backendAvailable) {
-    const { error } = await supabaseClient.from("groups").delete().eq("name", group);
-    if (error) return showToast(error.message);
-  }
   teamGroups = teamGroups.filter(item => item !== group);
-  localStorage.setItem(`${STORAGE_KEY}-groups`, JSON.stringify(teamGroups));
+  await saveTeamGroups("小组已删除");
   showToast("小组已删除");
   refreshPeopleControls(); renderTeamSettings(); render();
 }
@@ -815,19 +765,26 @@ async function init() {
     if (!els.memberGroup.value) return showToast("请先创建一个小组");
     const id = els.memberId.value;
     if (id) {
-      const person = people.find(item => item.id === id);
-      Object.assign(person, { name: els.memberName.value.trim(), role: els.memberRole.value.trim(), dept: els.memberGroup.value });
-      await saveTeam("成员资料已修改");
-    } else {
-      const colors = ["#4778f5","#ee6a8a","#8b5cf6","#16a085","#f59e0b","#12a36d","#3b82f6","#e879f9","#64748b","#ef4444","#06b6d4"];
-      people.push({
-        id: `p${Date.now()}`,
+      const { error } = await supabaseClient.from("members").update({
         name: els.memberName.value.trim(),
         role: els.memberRole.value.trim(),
-        dept: els.memberGroup.value,
+        group_name: els.memberGroup.value,
+      }).eq("id", id);
+      if (error) return showToast(error.message);
+      await loadCloudData();
+      showToast("成员资料已修改");
+    } else {
+      const colors = ["#4778f5","#ee6a8a","#8b5cf6","#16a085","#f59e0b","#12a36d","#3b82f6","#e879f9","#64748b","#ef4444","#06b6d4"];
+      const { error } = await supabaseClient.from("members").insert({
+        team_id: currentProfile.team_id,
+        name: els.memberName.value.trim(),
+        role: els.memberRole.value.trim(),
+        group_name: els.memberGroup.value,
         color: colors[people.length % colors.length],
       });
-      await saveTeam("新成员已添加");
+      if (error) return showToast(error.message);
+      await loadCloudData();
+      showToast("新成员已添加");
     }
     closeMemberEditor();
   });
@@ -839,13 +796,14 @@ async function init() {
     if (!next) return;
     if (groups().includes(next) && next !== original) return showToast("已存在同名小组");
     if (original) {
-      people.forEach(person => { if (person.dept === original) person.dept = next; });
+      const { error } = await supabaseClient.from("members").update({ group_name: next }).eq("team_id", currentProfile.team_id).eq("group_name", original);
+      if (error) return showToast(error.message);
       teamGroups = teamGroups.map(group => group === original ? next : group);
-      await saveTeam("小组名称已修改");
-      if (backendAvailable) await supabaseClient.from("groups").delete().eq("name", original);
+      await saveTeamGroups("小组名称已修改");
+      await loadCloudData();
     } else {
       teamGroups.push(next);
-      await saveTeam("小组已创建");
+      await saveTeamGroups("小组已创建");
     }
     closeGroupEditor();
     renderTeamSettings();
@@ -866,31 +824,23 @@ async function init() {
     e.preventDefault();
     if (new Date(els.eventEnd.value) <= new Date(els.eventStart.value)) return showToast("结束时间必须晚于开始时间");
     const payload = {
-      id: els.eventId.value || `e${Date.now()}`, title: els.eventTitle.value.trim(), ownerId: els.eventOwner.value,
+      id: els.eventId.value || null,
+      projectId: events.find(item => item.id === els.eventId.value)?.projectId || null,
+      title: els.eventTitle.value.trim(), ownerId: els.eventOwner.value,
       status: els.eventStatus.value, start: els.eventStart.value, end: els.eventEnd.value,
       city: els.eventCity.value.trim(), type: els.eventType.value.trim() || "未分类", venue: els.eventVenue.value.trim(), notes: els.eventNotes.value.trim()
     };
     const index = events.findIndex(item => item.id === payload.id);
-    index >= 0 ? events.splice(index, 1, payload) : events.push(payload);
-    await saveEvents(index >= 0 ? "日程修改已同步" : "新日程已同步给团队", payload);
-    closeModal(); render();
+    const saved = await saveEvents(index >= 0 ? "日程修改已同步" : "新日程已同步给团队", payload);
+    if (saved) closeModal();
   });
   els.deleteEvent.addEventListener("click", async () => {
     const event = events.find(item => item.id === els.eventId.value);
     if (!event || !confirm(`确定删除“${event.title}”吗？`)) return;
-    if (backendAvailable) {
-      const { error } = await supabaseClient.from("events").delete().eq("id", event.id);
-      if (error) return showToast(error.message);
-    }
-    events = events.filter(item => item.id !== event.id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-    showToast("日程已删除"); closeModal(); render();
-  });
-  channel && (channel.onmessage = ({data}) => {
-    if (data?.type === "events") { events = data.events; setSyncStatus("另一位成员刚刚更新", "online"); render(); showToast("收到团队成员的实时更新"); }
-  });
-  window.addEventListener("storage", e => {
-    if (e.key === STORAGE_KEY && e.newValue) { events = JSON.parse(e.newValue); render(); }
+    const { error } = await supabaseClient.rpc("delete_schedule", { p_assignment_id: event.id });
+    if (error) return showToast(error.message);
+    await loadCloudData();
+    showToast("日程已删除"); closeModal();
   });
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {
@@ -939,7 +889,7 @@ async function init() {
     if (error) els.authError.textContent = error.message;
   });
   els.accountButton.addEventListener("click", async () => {
-    if (!backendAvailable) return showToast("当前为本机演示模式");
+    if (!backendAvailable) return showToast("云端尚未连接");
     if (!confirm(`当前账号：${currentProfile.full_name || "团队成员"}。是否退出登录？`)) return;
     await supabaseClient.auth.signOut();
     location.reload();

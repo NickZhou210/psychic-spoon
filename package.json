@@ -1,7 +1,7 @@
 {
   "name": "k-loud",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs"
