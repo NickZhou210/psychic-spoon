@@ -485,6 +485,17 @@ $$;
 
 grant execute on function public.get_schedule_system_status() to authenticated;
 
+grant usage on schema public to authenticated;
+grant select, update on public.profiles to authenticated;
+grant select, update on public.teams to authenticated;
+grant select, insert, update, delete on public.members to authenticated;
+grant select, insert, update, delete on public.projects to authenticated;
+grant select, insert, update, delete on public.assignments to authenticated;
+grant select on public.event_audit_logs to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+grant execute on function public.current_app_role() to authenticated;
+grant execute on function public.current_team_id() to authenticated;
+
 select
   'K-Loud cloud data model installed' as result,
   (select count(*) from public.teams) as teams,
