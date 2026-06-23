@@ -5,6 +5,8 @@ let backendAvailable = false;
 let deferredInstallPrompt = null;
 let supabaseClient = null;
 let currentProfile = { role: "viewer", person_id: null, full_name: "" };
+let activityLogs = [];
+let activityLogError = null;
 
 const seedPeople = [
   { id: "p1", name: "李涛", role: "项目负责人", dept: "业务一组", color: "#4778f5" },
@@ -69,6 +71,7 @@ const els = Object.fromEntries([
   ,"memberEditorModal","groupEditorModal","memberEditorTitle","groupEditorTitle"
   ,"memberCountLabel","groupCountLabel"
   ,"authScreen","loginForm","loginEmail","loginPassword","authError","accountButton"
+  ,"activityCard","activityList","activityCount","expandSchedule","closeExpandedSchedule"
 ].map(id => [id, document.getElementById(id)]));
 
 function canEditEvents() { return !backendAvailable || ["admin", "editor"].includes(currentProfile.role); }
@@ -92,13 +95,14 @@ function loadGroups() {
     return Array.isArray(saved) ? saved : seedGroups;
   } catch { return seedGroups; }
 }
-async function saveEvents(message = "排期已实时同步") {
+async function saveEvents(message = "排期已实时同步", changedEvent = null) {
   if (!canEditEvents()) return showToast("当前账号为只读权限");
   localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
   channel?.postMessage({ type: "events", events });
   if (backendAvailable) {
     try {
-      const { error } = await supabaseClient.from("events").upsert(events.map(toEventRow));
+      const rows = changedEvent ? [toEventRow(changedEvent)] : events.map(toEventRow);
+      const { error } = await supabaseClient.from("events").upsert(rows);
       if (error) throw error;
     } catch (error) {
       els.lastSync.textContent = "Supabase同步失败";
@@ -187,7 +191,7 @@ async function connectBackend() {
     people = personRows.map(fromPersonRow);
     teamGroups = groupRows.map(row => row.name);
     backendAvailable = true;
-    els.accountButton.textContent = (profile.full_name || user.email || "我").slice(-1);
+    els.accountButton.title = `${profile.full_name || user.email || "团队账号"} · 点击退出`;
     document.getElementById("teamSettingsButton").classList.toggle("hidden", !canManageTeam());
     document.getElementById("addEventButton").classList.toggle("hidden", !canEditEvents());
     if (!canEditEvents() && !document.querySelector(".read-only-banner")) {
@@ -206,6 +210,7 @@ function connectRealtimeStream() {
     .on("postgres_changes", { event: "*", schema: "public", table: "events" }, loadEventsFromSupabase)
     .on("postgres_changes", { event: "*", schema: "public", table: "people" }, loadTeamFromSupabase)
     .on("postgres_changes", { event: "*", schema: "public", table: "groups" }, loadTeamFromSupabase)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "event_audit_logs" }, loadActivityLogs)
     .subscribe(status => { els.lastSync.textContent = status === "SUBSCRIBED" ? "Supabase实时连接" : "正在连接云端…"; });
 }
 async function loadEventsFromSupabase() {
@@ -220,6 +225,23 @@ async function loadTeamFromSupabase() {
   people = (personRows || []).map(fromPersonRow);
   teamGroups = (groupRows || []).map(row => row.name);
   refreshPeopleControls(); renderTeamSettings(); render();
+}
+async function loadActivityLogs() {
+  if (!backendAvailable) return;
+  const { data, error } = await supabaseClient
+    .from("event_audit_logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) {
+    activityLogs = [];
+    activityLogError = error;
+    if (currentView === "activity") renderActivityLog(error);
+    return;
+  }
+  activityLogError = null;
+  activityLogs = data || [];
+  if (currentView === "activity") renderActivityLog();
 }
 function startOfDay(date) { const d = new Date(date); d.setHours(0,0,0,0); return d; }
 function addDays(date, amount) { return new Date(startOfDay(date).getTime() + amount * DAY_MS); }
@@ -275,6 +297,10 @@ function render() {
     renderProjectList();
     return;
   }
+  if (currentView === "activity") {
+    renderActivityLog(activityLogError);
+    return;
+  }
   const end = addDays(rangeStart, days - 1);
   els.rangeTitle.textContent = `${rangeStart.getFullYear()}年 ${dateLabel(rangeStart)} — ${dateLabel(end)}`;
   document.documentElement.style.setProperty("--days", days);
@@ -323,14 +349,17 @@ function renderViewChrome() {
     mine: `我的日程 · ${currentProfile.full_name || personById(currentUserId)?.name || "未绑定成员"}`,
     conflicts: "排期冲突中心",
     projects: "项目列表",
+    activity: "日程操作日志",
   };
   els.pageTitle.textContent = titles[currentView];
   document.querySelectorAll(".nav-item[data-view]").forEach(button => {
     button.classList.toggle("active", button.dataset.view === currentView);
   });
-  document.querySelector(".schedule-card").classList.toggle("hidden", currentView === "projects");
-  document.querySelector(".toolbar-panel").classList.toggle("hidden", currentView === "projects");
+  const nonScheduleView = ["projects", "activity"].includes(currentView);
+  document.querySelector(".schedule-card").classList.toggle("hidden", nonScheduleView);
+  document.querySelector(".toolbar-panel").classList.toggle("hidden", nonScheduleView);
   els.projectListCard.classList.toggle("hidden", currentView !== "projects");
+  els.activityCard.classList.toggle("hidden", currentView !== "activity");
 }
 
 function renderProjectList() {
@@ -366,6 +395,50 @@ function renderProjectList() {
 
 function formatDateTime(date) {
   return `${date.getMonth()+1}/${date.getDate()} ${String(date.getHours()).padStart(2,"0")}:${String(date.getMinutes()).padStart(2,"0")}`;
+}
+
+function renderActivityLog(error = null) {
+  if (error) {
+    els.activityCount.textContent = "尚未启用";
+    els.activityList.innerHTML = `<div class="empty-state">请先在 Supabase SQL Editor 执行操作日志增量 SQL。</div>`;
+    return;
+  }
+  els.activityCount.textContent = `最近 ${activityLogs.length} 条`;
+  if (!activityLogs.length) {
+    els.activityList.innerHTML = `<div class="empty-state">还没有日程创建、修改或删除记录。</div>`;
+    return;
+  }
+  const actionText = { insert: "创建", update: "修改", delete: "删除" };
+  els.activityList.innerHTML = activityLogs.map(log => {
+    const details = describeAuditChange(log);
+    return `<article class="activity-row">
+      <div class="activity-icon ${log.action}">${actionText[log.action]?.slice(0,1) || "记"}</div>
+      <div class="activity-main">
+        <div><strong>${escapeHtml(log.actor_name || "团队成员")}</strong> ${actionText[log.action] || "操作"}了
+          <b>${escapeHtml(log.event_title || "未命名日程")}</b>
+        </div>
+        <span>${escapeHtml(details)}</span>
+      </div>
+      <time>${formatAuditTime(log.created_at)}</time>
+    </article>`;
+  }).join("");
+}
+
+function describeAuditChange(log) {
+  if (log.action === "insert") return "新增日程并同步给团队";
+  if (log.action === "delete") return "删除了该日程";
+  const oldData = log.old_data || {}, newData = log.new_data || {};
+  const fields = [
+    ["title","项目名称"], ["owner_id","负责人"], ["start_at","开始时间"], ["end_at","结束时间"],
+    ["status","状态"], ["city","城市"], ["business_type","业务类型"], ["venue","场地"], ["notes","备注"]
+  ];
+  const changed = fields.filter(([key]) => String(oldData[key] ?? "") !== String(newData[key] ?? "")).map(([,label]) => label);
+  return changed.length ? `修改：${changed.join("、")}` : "更新了日程内容";
+}
+
+function formatAuditTime(value) {
+  const date = new Date(value);
+  return `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${String(date.getHours()).padStart(2,"0")}:${String(date.getMinutes()).padStart(2,"0")}`;
 }
 
 function renderPersonEvents(personId, visible, conflicts) {
@@ -409,7 +482,7 @@ function bindEventBlocks() {
         const event = events.find(item => item.id === dragState.id);
         event.start = shiftDateTime(dragState.originalStart, delta);
         event.end = shiftDateTime(dragState.originalEnd, delta);
-        saveEvents(`“${event.title}”已移动 ${Math.abs(delta)} 天`);
+        saveEvents(`“${event.title}”已移动 ${Math.abs(delta)} 天`, event);
         render();
       }
       setTimeout(() => { dragState = null; }, 0);
@@ -677,9 +750,10 @@ async function init() {
   });
   els.cancelGroupEdit.addEventListener("click", closeGroupEditor);
   document.querySelectorAll(".nav-item[data-view]").forEach(button => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       currentView = button.dataset.view;
       if (currentView === "conflicts" && conflictIds().size === 0) showToast("当前没有人员排期冲突");
+      if (currentView === "activity") await loadActivityLogs();
       render();
     });
   });
@@ -696,7 +770,7 @@ async function init() {
     };
     const index = events.findIndex(item => item.id === payload.id);
     index >= 0 ? events.splice(index, 1, payload) : events.push(payload);
-    await saveEvents(index >= 0 ? "日程修改已同步" : "新日程已同步给团队");
+    await saveEvents(index >= 0 ? "日程修改已同步" : "新日程已同步给团队", payload);
     closeModal(); render();
   });
   els.deleteEvent.addEventListener("click", async () => {
@@ -717,8 +791,16 @@ async function init() {
     if (e.key === STORAGE_KEY && e.newValue) { events = JSON.parse(e.newValue); render(); }
   });
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeModal(); closeMemberEditor(); closeGroupEditor(); closeTeamModal(); }
+    if (e.key === "Escape") {
+      closeModal(); closeMemberEditor(); closeGroupEditor(); closeTeamModal();
+      document.body.classList.remove("schedule-expanded");
+    }
   });
+  els.expandSchedule.addEventListener("click", () => {
+    document.body.classList.add("schedule-expanded");
+    setTimeout(() => els.scheduleScroll.scrollTo({ left: 0, top: 0, behavior: "smooth" }), 30);
+  });
+  els.closeExpandedSchedule.addEventListener("click", () => document.body.classList.remove("schedule-expanded"));
   window.addEventListener("beforeinstallprompt", event => {
     event.preventDefault();
     deferredInstallPrompt = event;

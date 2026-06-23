@@ -42,6 +42,7 @@
         <button class="nav-item" data-view="mine"><span>◫</span>我的日程</button>
         <button class="nav-item" data-view="conflicts"><span>⚠</span>冲突中心 <b id="navConflictCount">0</b></button>
         <button class="nav-item" data-view="projects"><span>◎</span>项目列表</button>
+        <button class="nav-item" data-view="activity"><span>↺</span>操作日志</button>
         <button class="nav-item" id="teamSettingsButton"><span>⚙</span>团队设置</button>
       </nav>
 
@@ -69,7 +70,7 @@
           <button class="icon-button hidden" id="installButton">安装App</button>
           <button class="icon-button" id="todayButton">今天</button>
           <button class="primary-button" id="addEventButton">＋ 新建日程</button>
-          <button class="avatar avatar-button" id="accountButton" title="账号与退出">周</button>
+          <button class="account-button" id="accountButton" title="账号与退出"><span>●</span>账号</button>
         </div>
       </header>
 
@@ -127,6 +128,10 @@
             <i class="progress"></i>进行中
             <i class="conflict"></i>冲突
           </div>
+          <div class="schedule-expand-actions">
+            <button type="button" class="expand-schedule-button" id="expandSchedule">⛶ 放大排期</button>
+            <button type="button" class="expand-schedule-button close-expanded-button" id="closeExpandedSchedule">× 退出全屏</button>
+          </div>
         </div>
         <div class="schedule-scroll" id="scheduleScroll">
           <div class="schedule-grid" id="scheduleGrid"></div>
@@ -147,6 +152,17 @@
             <tbody id="projectTableBody"></tbody>
           </table>
         </div>
+      </section>
+
+      <section class="activity-card hidden" id="activityCard">
+        <div class="project-list-header">
+          <div>
+            <span class="eyebrow">审计记录</span>
+            <h2>日程操作日志</h2>
+          </div>
+          <span id="activityCount"></span>
+        </div>
+        <div class="activity-list" id="activityList"></div>
       </section>
     </main>
   </div>
