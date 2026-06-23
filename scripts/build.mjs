@@ -19,7 +19,9 @@ const config = {
   SUPABASE_URL: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "",
   SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ""
 };
-await fs.writeFile(path.join(dist, "config.js"), `window.APP_CONFIG = ${JSON.stringify(config)};\n`);
+const builtIndex = (await fs.readFile(path.join(dist, "index.html"), "utf8"))
+  .replace("__K_LOUD_CONFIG__", JSON.stringify(config).replaceAll("<", "\\u003c"));
+await fs.writeFile(path.join(dist, "index.html"), builtIndex);
 await fs.writeFile(path.join(dist, "_headers"), [
   "/*",
   "  X-Content-Type-Options: nosniff",
@@ -40,9 +42,6 @@ await fs.writeFile(path.join(dist, "_headers"), [
   "",
   "/supabase.js",
   "  Cache-Control: public, max-age=31536000, immutable",
-  "",
-  "/config.js",
-  "  Cache-Control: no-store",
 ].join("\n"));
 await fs.writeFile(path.join(dist, "_redirects"), "# No redirect rules for Workers assets deployment.\n");
 console.log("Dist files:", (await fs.readdir(dist)).sort().join(", "));

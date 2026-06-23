@@ -95,13 +95,21 @@ function fromPersonRow(row) {
 
 async function connectBackend() {
   const config = window.APP_CONFIG || {};
-  if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY || !window.supabase) {
+  if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY) {
     backendAvailable = false;
     els.authScreen.classList.remove("hidden");
     els.authError.textContent = "云端配置缺失：请在 Cloudflare Pages 设置 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY";
     els.loginForm.querySelector("button[type='submit']").disabled = true;
     setSyncStatus("云端配置缺失 · 系统已停止加载", "error");
     throw new Error("Supabase environment variables are missing");
+  }
+  if (!window.supabase?.createClient) {
+    backendAvailable = false;
+    els.authScreen.classList.remove("hidden");
+    els.authError.textContent = "Supabase客户端加载失败，请刷新页面或检查网络";
+    els.loginForm.querySelector("button[type='submit']").disabled = true;
+    setSyncStatus("云端客户端加载失败", "error");
+    throw new Error("Supabase browser client failed to load");
   }
   supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
   const { data: { session } } = await supabaseClient.auth.getSession();
@@ -152,9 +160,10 @@ function bindLoginForm() {
     els.loginButton.textContent = "登录中…";
     try {
       const config = window.APP_CONFIG || {};
-      if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY || !window.supabase) {
+      if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY) {
         throw new Error("云端配置缺失，请联系管理员");
       }
+      if (!window.supabase?.createClient) throw new Error("Supabase客户端加载失败，请刷新页面");
       supabaseClient ||= window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
       const { error } = await supabaseClient.auth.signInWithPassword({
         email: els.loginEmail.value.trim(),
