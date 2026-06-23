@@ -1,5 +1,12 @@
-const CACHE = "k-loud-shell-v8";
-const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "k-loud-shell-v9";
+const SHELL = [
+  "/",
+  "/index.html",
+  "/styles.css?v=1.3.1",
+  "/app.js?v=1.3.1",
+  "/manifest.webmanifest?v=1.3.1",
+  "/icon.svg?v=1.3.1"
+];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
