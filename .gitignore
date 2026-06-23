@@ -1,0 +1,7 @@
+dist/
+.DS_Store
+.env
+.env.*
+!config.example.js
+node_modules/
+preview*.png
