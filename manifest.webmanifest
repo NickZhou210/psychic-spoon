@@ -1,6 +1,6 @@
 {
-  "name": "团队排期总控台",
-  "short_name": "团队排期",
+  "name": "K-Loud",
+  "short_name": "K-Loud",
   "description": "多人实时协作的团队资源排期矩阵",
   "start_url": "/",
   "display": "standalone",

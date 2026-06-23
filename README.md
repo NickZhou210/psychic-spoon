@@ -1,4 +1,4 @@
-# 团队排期总控台
+# K-Loud
 
 基于Cloudflare Pages与Supabase的团队实时排期PWA。
 

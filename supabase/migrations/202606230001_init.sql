@@ -180,3 +180,29 @@ values
   ('e9','品牌发布会','p1','2026-06-26 15:00','2026-06-26 21:00','confirmed','杭州','发布会','国际博览中心',''),
   ('e10','音乐节联排','p5','2026-06-30 13:00','2026-06-30 19:00','pending','沈阳','音乐节','奥体中心','')
 on conflict (id) do nothing;
+
+-- Bootstrap the first administrator.
+-- The user must already exist under Supabase Authentication > Users.
+do $$
+declare
+  admin_user_id uuid;
+begin
+  select id
+    into admin_user_id
+    from auth.users
+   where lower(email) = lower('nickh1ph0@gmail.com')
+   limit 1;
+
+  if admin_user_id is null then
+    raise exception
+      'Administrator user nickh1ph0@gmail.com was not found. Create this user in Authentication > Users, then run this script again.';
+  end if;
+
+  insert into public.profiles (id, full_name, role)
+  values (admin_user_id, '管理员', 'admin')
+  on conflict (id) do update
+    set full_name = excluded.full_name,
+        role = excluded.role,
+        updated_at = now();
+end
+$$;

@@ -1,4 +1,4 @@
-const CACHE = "team-schedule-shell-v4";
+const CACHE = "k-loud-shell-v5";
 const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", event => {
