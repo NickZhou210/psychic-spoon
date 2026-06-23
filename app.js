@@ -93,7 +93,7 @@ function fromPersonRow(row) {
   return { id: row.id, name: row.name, role: row.role, dept: row.group_name, color: row.color };
 }
 
-async function connectBackend() {
+async function connectBackend(sessionOverride = null) {
   const config = window.APP_CONFIG || {};
   if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY) {
     backendAvailable = false;
@@ -112,7 +112,7 @@ async function connectBackend() {
     throw new Error("Supabase browser client failed to load");
   }
   supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
-  const { data: { session } } = await supabaseClient.auth.getSession();
+  const session = sessionOverride || (await supabaseClient.auth.getSession()).data.session;
   if (!session) {
     els.authScreen.classList.remove("hidden");
     setSyncStatus("等待登录云端账号", "connecting");
@@ -120,7 +120,8 @@ async function connectBackend() {
   }
   try {
     els.authScreen.classList.add("hidden");
-    const { data: { user } } = await supabaseClient.auth.getUser();
+    const user = session.user;
+    if (!user?.id) throw new Error("登录会话中缺少用户信息");
     const { data: profile, error: profileError } = await supabaseClient
       .from("profiles")
       .select("id,full_name,role,team_id,member_id")
@@ -146,9 +147,9 @@ async function connectBackend() {
   } catch (error) {
     backendAvailable = false;
     els.authScreen.classList.remove("hidden");
-    els.authError.textContent = error.message || "Supabase连接失败";
+    els.authError.textContent = `登录成功，但云端数据初始化失败：${error.message || "未知错误"}`;
     setSyncStatus("云端数据层不可用", "error");
-    throw error;
+    return false;
   }
 }
 
@@ -165,14 +166,19 @@ function bindLoginForm() {
       }
       if (!window.supabase?.createClient) throw new Error("Supabase客户端加载失败，请刷新页面");
       supabaseClient ||= window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
-      const { error } = await supabaseClient.auth.signInWithPassword({
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
         email: els.loginEmail.value.trim(),
         password: els.loginPassword.value,
       });
       if (error) throw error;
+      if (!data.session) throw new Error("认证成功，但Supabase没有返回会话");
       els.loginButton.textContent = "登录成功，正在加载数据…";
-      const connected = await connectBackend();
-      if (!connected) throw new Error("登录成功，但未能建立云端会话");
+      const connected = await connectBackend(data.session);
+      if (!connected) {
+        els.loginButton.disabled = false;
+        els.loginButton.textContent = "重试进入";
+        return;
+      }
       render();
     } catch (error) {
       els.authError.textContent = error.message || "登录失败，请重试";
