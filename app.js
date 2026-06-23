@@ -6,6 +6,10 @@ let currentProfile = { role: "viewer", member_id: null, team_id: null, full_name
 let activityLogs = [];
 let activityLogError = null;
 let managedAccounts = [];
+let deletedSchedules = [];
+let cloudBackups = [];
+let permissionDiagnostics = null;
+let recoveryEnabled = false;
 let syncPollTimer = null;
 let reloadingForUpdate = false;
 let people = [];
@@ -33,6 +37,9 @@ const els = Object.fromEntries([
   ,"activityCard","activityList","activityCount","expandSchedule","closeExpandedSchedule"
   ,"accountsPanel","accountList","accountCountLabel","refreshAccounts"
   ,"mobileSyncStatus","loginButton"
+  ,"conflictInsights","conflictInsightCount","conflictList"
+  ,"recoveryPanel","securityStatus","backupCountLabel","backupList","trashCountLabel","trashList"
+  ,"createBackup","exportBackup","refreshRecovery"
 ].map(id => [id, document.getElementById(id)]));
 
 function setSyncStatus(text, state = "connecting") {
@@ -283,6 +290,9 @@ async function checkSystemStatus() {
   if (!status.assignments_realtime_enabled || !status.projects_realtime_enabled || !status.members_realtime_enabled) {
     setSyncStatus("云端轮询同步 · Realtime未完整启用", "warning");
   }
+  const diagnosticResult = await supabaseClient.rpc("get_permission_diagnostics");
+  recoveryEnabled = !diagnosticResult.error && Boolean(diagnosticResult.data?.[0]?.rls_enabled);
+  if (!diagnosticResult.error) permissionDiagnostics = diagnosticResult.data?.[0] || null;
 }
 
 async function loadManagedAccounts() {
@@ -355,12 +365,63 @@ function overlap(a, b) {
   const [as, ae] = eventDates(a), [bs, be] = eventDates(b);
   return a.ownerId === b.ownerId && as < be && bs < ae;
 }
-function conflictIds() {
-  const ids = new Set();
-  for (let i=0;i<events.length;i++) for (let j=i+1;j<events.length;j++) {
-    if (overlap(events[i], events[j])) { ids.add(events[i].id); ids.add(events[j].id); }
+function hoursBetween(a, b) { return (new Date(b) - new Date(a)) / 3600000; }
+function conflictDetails(sourceEvents = events) {
+  const issues = [];
+  const byOwner = new Map();
+  sourceEvents.forEach(event => {
+    const list = byOwner.get(event.ownerId) || [];
+    list.push(event);
+    byOwner.set(event.ownerId, list);
+    const duration = hoursBetween(event.start, event.end);
+    if (duration >= 12) {
+      issues.push({
+        key: `workload:${event.id}`, type: "workload", severity: "warning",
+        eventIds: [event.id], ownerId: event.ownerId,
+        title: "超长连续工作",
+        detail: `${event.title} 连续 ${Math.round(duration * 10) / 10} 小时`,
+      });
+    }
+  });
+  for (const [ownerId, ownerEvents] of byOwner) {
+    const sorted = [...ownerEvents].sort((a,b) => new Date(a.start) - new Date(b.start));
+    for (let i = 0; i < sorted.length; i++) {
+      for (let j = i + 1; j < sorted.length; j++) {
+        const first = sorted[i], second = sorted[j];
+        if (new Date(second.start) >= new Date(first.end)) break;
+        if (overlap(first, second)) {
+          issues.push({
+            key: `overlap:${first.id}:${second.id}`, type: "overlap", severity: "danger",
+            eventIds: [first.id, second.id], ownerId,
+            title: "同一成员时间撞期",
+            detail: `${first.title} 与 ${second.title} 时间重叠`,
+          });
+        }
+      }
+      const first = sorted[i], next = sorted[i + 1];
+      if (!next || new Date(next.start) < new Date(first.end)) continue;
+      const gap = hoursBetween(first.end, next.start);
+      if (first.city && next.city && first.city !== next.city && gap < 12) {
+        issues.push({
+          key: `travel:${first.id}:${next.id}`, type: "travel", severity: "danger",
+          eventIds: [first.id, next.id], ownerId,
+          title: "跨城赶场时间不足",
+          detail: `${first.city} → ${next.city}，仅间隔 ${Math.round(gap * 10) / 10} 小时`,
+        });
+      } else if (gap < 8) {
+        issues.push({
+          key: `rest:${first.id}:${next.id}`, type: "workload", severity: "warning",
+          eventIds: [first.id, next.id], ownerId,
+          title: "连续项目休息不足",
+          detail: `${first.title} 后仅休息 ${Math.round(gap * 10) / 10} 小时`,
+        });
+      }
+    }
   }
-  return ids;
+  return issues;
+}
+function conflictIds() {
+  return new Set(conflictDetails().flatMap(issue => issue.eventIds));
 }
 function visiblePeople() {
   const q = els.searchInput.value.trim().toLowerCase();
@@ -404,6 +465,7 @@ function render() {
   document.documentElement.style.setProperty("--day-width", days === 30 ? "72px" : days === 7 ? "118px" : "96px");
 
   const list = filteredEvents();
+  const conflictIssues = conflictDetails();
   const conflicts = conflictIds();
   const peopleList = visiblePeople();
   const visible = list.filter(e => {
@@ -413,8 +475,8 @@ function render() {
   els.visibleEventCount.textContent = visible.length;
   els.progressCount.textContent = visible.filter(e => e.status === "progress").length;
   els.pendingCount.textContent = visible.filter(e => e.status === "pending").length;
-  els.conflictCount.textContent = conflicts.size;
-  els.navConflictCount.textContent = conflicts.size;
+  els.conflictCount.textContent = conflictIssues.length;
+  els.navConflictCount.textContent = conflictIssues.length;
 
   const headerDays = Array.from({length: days}, (_,i) => addDays(rangeStart, i));
   let html = `<div class="grid-row header-row"><div class="person-cell"><div class="person-meta"><strong>成员 / 日期</strong><span>${peopleList.length} 位成员</span></div></div>`;
@@ -438,9 +500,13 @@ function render() {
   }
   els.scheduleGrid.innerHTML = html;
   bindEventBlocks();
+  if (currentView === "conflicts") renderConflictInsights(conflictIssues);
 }
 
 function renderViewChrome() {
+  const issueCount = conflictDetails().length;
+  els.conflictCount.textContent = issueCount;
+  els.navConflictCount.textContent = issueCount;
   const titles = {
     overview: "团队实时排期",
     mine: `我的日程 · ${currentProfile.full_name || personById(currentUserId)?.name || "未绑定成员"}`,
@@ -457,11 +523,29 @@ function renderViewChrome() {
   document.querySelector(".toolbar-panel").classList.toggle("hidden", nonScheduleView);
   els.projectListCard.classList.toggle("hidden", currentView !== "projects");
   els.activityCard.classList.toggle("hidden", currentView !== "activity");
+  els.conflictInsights.classList.toggle("hidden", currentView !== "conflicts");
+}
+
+function renderConflictInsights(issues = conflictDetails()) {
+  const typeLabel = { overlap: "撞期", travel: "赶场", workload: "工时" };
+  els.conflictInsightCount.textContent = `${issues.length} 项风险`;
+  els.conflictList.innerHTML = issues.length ? issues.map(issue => {
+    const owner = personById(issue.ownerId);
+    return `<button class="conflict-item ${issue.severity}" type="button" data-event="${issue.eventIds[0]}">
+      <span class="conflict-type">${typeLabel[issue.type] || "风险"}</span>
+      <span class="conflict-copy"><strong>${escapeHtml(issue.title)}</strong><small>${escapeHtml(owner?.name || "未分配")} · ${escapeHtml(issue.detail)}</small></span>
+      <span class="conflict-open">查看 ›</span>
+    </button>`;
+  }).join("") : `<div class="empty-state">当前没有检测到排期风险。</div>`;
+  document.querySelectorAll(".conflict-item").forEach(button => button.addEventListener("click", () => {
+    openModal(events.find(event => event.id === button.dataset.event));
+  }));
 }
 
 function renderProjectList() {
   const q = els.searchInput.value.trim().toLowerCase();
   const conflicts = conflictIds();
+  const issues = conflictDetails();
   const statusText = { confirmed:"已确认", pending:"待确认", progress:"进行中", draft:"草稿" };
   const sorted = [...events]
     .filter(e => !q || `${e.title} ${e.city} ${e.type} ${personById(e.ownerId)?.name}`.toLowerCase().includes(q))
@@ -487,7 +571,7 @@ function renderProjectList() {
   els.visibleEventCount.textContent = visible.length;
   els.progressCount.textContent = visible.filter(e => e.status === "progress").length;
   els.pendingCount.textContent = visible.filter(e => e.status === "pending").length;
-  els.conflictCount.textContent = conflicts.size;
+  els.conflictCount.textContent = issues.length;
 }
 
 function formatDateTime(date) {
@@ -505,7 +589,7 @@ function renderActivityLog(error = null) {
     els.activityList.innerHTML = `<div class="empty-state">还没有日程创建、修改或删除记录。</div>`;
     return;
   }
-  const actionText = { insert: "创建", update: "修改", delete: "删除" };
+  const actionText = { insert: "创建", update: "修改", delete: "删除", restore: "恢复" };
   els.activityList.innerHTML = activityLogs.map(log => {
     const details = describeAuditChange(log);
     return `<article class="activity-row">
@@ -523,7 +607,8 @@ function renderActivityLog(error = null) {
 
 function describeAuditChange(log) {
   if (log.action === "insert") return "新增日程并同步给团队";
-  if (log.action === "delete") return "删除了该日程";
+  if (log.action === "delete") return "移入最近删除，可由管理员恢复";
+  if (log.action === "restore") return "从最近删除中恢复了该日程";
   const oldData = log.old_data || {}, newData = log.new_data || {};
   const fields = [
     ["title","项目名称"], ["owner_id","负责人"], ["start_at","开始时间"], ["end_at","结束时间"],
@@ -531,6 +616,113 @@ function describeAuditChange(log) {
   ];
   const changed = fields.filter(([key]) => String(oldData[key] ?? "") !== String(newData[key] ?? "")).map(([,label]) => label);
   return changed.length ? `修改：${changed.join("、")}` : "更新了日程内容";
+}
+
+async function loadRecoveryCenter() {
+  if (!canManageTeam()) return;
+  els.securityStatus.textContent = "正在检查权限配置…";
+  const [diagnosticResult, deletedResult, backupResult] = await Promise.all([
+    supabaseClient.rpc("get_permission_diagnostics"),
+    supabaseClient.rpc("list_deleted_schedules"),
+    supabaseClient.from("team_backups").select("id,name,created_at,snapshot").order("created_at", { ascending: false }).limit(30),
+  ]);
+  if (diagnosticResult.error || deletedResult.error || backupResult.error) {
+    els.securityStatus.className = "security-status error";
+    els.securityStatus.textContent = "安全与恢复功能尚未安装，请执行 v1.5.0 数据库增量 SQL。";
+    els.backupList.innerHTML = `<div class="empty-settings">数据库迁移完成后可创建云端快照。</div>`;
+    els.trashList.innerHTML = `<div class="empty-settings">数据库迁移完成后可恢复删除的日程。</div>`;
+    return;
+  }
+  permissionDiagnostics = diagnosticResult.data?.[0] || null;
+  recoveryEnabled = Boolean(permissionDiagnostics?.rls_enabled);
+  deletedSchedules = deletedResult.data || [];
+  cloudBackups = backupResult.data || [];
+  renderRecoveryCenter();
+}
+
+function renderRecoveryCenter() {
+  const roleText = { admin: "管理员", editor: "编辑者", viewer: "只读成员" };
+  const checks = [
+    permissionDiagnostics?.rls_enabled,
+    permissionDiagnostics?.can_manage_accounts,
+    permissionDiagnostics?.can_restore_data,
+  ];
+  const secure = checks.every(Boolean);
+  els.securityStatus.className = `security-status ${secure ? "ok" : "warning"}`;
+  els.securityStatus.innerHTML = `<strong>${secure ? "权限保护已启用" : "权限配置需要检查"}</strong>
+    <span>当前角色：${roleText[permissionDiagnostics?.role] || permissionDiagnostics?.role || "未知"} · RLS ${permissionDiagnostics?.rls_enabled ? "已开启" : "未完整开启"} · 最后管理员保护已启用</span>`;
+
+  els.backupCountLabel.textContent = `共 ${cloudBackups.length} 个云端快照`;
+  els.backupList.innerHTML = cloudBackups.length ? cloudBackups.map(backup => `
+    <div class="setting-row backup-row" data-backup="${backup.id}">
+      <div class="setting-main"><strong>${escapeHtml(backup.name)}</strong><span>${formatAuditTime(backup.created_at)}</span></div>
+      <div class="setting-actions">
+        <button class="small-action download-backup">下载</button>
+        <button class="small-action restore-backup">恢复覆盖</button>
+      </div>
+    </div>`).join("") : `<div class="empty-settings">还没有云端快照。建议重大修改前先创建一个。</div>`;
+
+  els.trashCountLabel.textContent = `共 ${deletedSchedules.length} 条可恢复日程`;
+  els.trashList.innerHTML = deletedSchedules.length ? deletedSchedules.map(item => `
+    <div class="setting-row trash-row" data-assignment="${item.assignment_id}">
+      <div class="setting-main"><strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.member_name)} · ${formatDateTime(new Date(item.start_at))} · ${formatAuditTime(item.deleted_at)} 删除</span>
+      </div>
+      <button class="small-action restore-schedule">恢复</button>
+    </div>`).join("") : `<div class="empty-settings">最近没有删除的日程。</div>`;
+
+  document.querySelectorAll(".restore-schedule").forEach(button => button.addEventListener("click", async () => {
+    const id = button.closest(".trash-row").dataset.assignment;
+    const { error } = await supabaseClient.rpc("restore_schedule", { p_assignment_id: id });
+    if (error) return showToast(error.message || "恢复失败");
+    await Promise.all([loadCloudData(), loadRecoveryCenter(), loadActivityLogs()]);
+    showToast("日程已恢复并同步");
+  }));
+  document.querySelectorAll(".download-backup").forEach(button => button.addEventListener("click", () => {
+    const backup = cloudBackups.find(item => item.id === button.closest(".backup-row").dataset.backup);
+    if (backup) downloadJson(backup.snapshot, `${safeFileName(backup.name)}.json`);
+  }));
+  document.querySelectorAll(".restore-backup").forEach(button => button.addEventListener("click", async () => {
+    const backup = cloudBackups.find(item => item.id === button.closest(".backup-row").dataset.backup);
+    if (!backup || !confirm(`确定用“${backup.name}”覆盖恢复现有数据吗？恢复前会保留当前快照。`)) return;
+    const preBackup = await supabaseClient.rpc("create_team_backup", { p_name: "恢复前自动备份" });
+    if (preBackup.error) return showToast(preBackup.error.message || "恢复前备份失败");
+    const { error } = await supabaseClient.rpc("restore_team_backup", { p_backup_id: backup.id });
+    if (error) return showToast(error.message || "备份恢复失败");
+    await Promise.all([loadCloudData(), loadRecoveryCenter()]);
+    showToast("云端快照已恢复");
+  }));
+}
+
+function safeFileName(value) {
+  return String(value || "K-Loud备份").replace(/[\\/:*?"<>|]/g, "-");
+}
+
+function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function createCloudBackup() {
+  if (!canManageTeam()) return showToast("只有管理员可以创建备份");
+  const label = `手动备份 ${new Date().toLocaleString("zh-CN", { hour12: false })}`;
+  const { error } = await supabaseClient.rpc("create_team_backup", { p_name: label });
+  if (error) return showToast(error.message || "备份创建失败");
+  await loadRecoveryCenter();
+  showToast("云端快照已创建");
+}
+
+function exportCurrentData() {
+  downloadJson({
+    version: "1.5.0",
+    exportedAt: new Date().toISOString(),
+    teamId: currentProfile.team_id,
+    members: people,
+    schedules: events,
+  }, `K-Loud-${isoDate(new Date())}.json`);
 }
 
 function formatAuditTime(value) {
@@ -559,6 +751,7 @@ function bindEventBlocks() {
       if (!dragState?.moved) openModal(events.find(e => e.id === block.dataset.event));
     });
     block.addEventListener("pointerdown", e => {
+      if (!canEditEvents()) return;
       const event = events.find(item => item.id === block.dataset.event);
       dragState = { id: event.id, x: e.clientX, originalStart: event.start, originalEnd: event.end, moved: false };
       block.setPointerCapture(e.pointerId);
@@ -586,7 +779,10 @@ function bindEventBlocks() {
     });
   });
   document.querySelectorAll(".day-cell").forEach(cell => {
-    cell.addEventListener("dblclick", () => openModal(null, cell.dataset.person, cell.dataset.date));
+    cell.addEventListener("dblclick", () => {
+      if (!canEditEvents()) return showToast("当前账号为只读权限");
+      openModal(null, cell.dataset.person, cell.dataset.date);
+    });
   });
 }
 function shiftDateTime(value, deltaDays) {
@@ -599,11 +795,16 @@ function toLocalInput(date) {
 
 function openModal(event, ownerId = null, date = isoDate(new Date())) {
   if (!people.length) return showToast("请先在团队设置中添加成员");
+  const editable = canEditEvents();
   ownerId ||= people[0].id;
   els.eventModal.classList.remove("hidden");
   els.eventId.value = event?.id || "";
-  els.modalTitle.textContent = event ? "编辑日程" : "新建日程";
-  els.deleteEvent.classList.toggle("hidden", !event);
+  els.modalTitle.textContent = event ? (editable ? "编辑日程" : "日程详情") : "新建日程";
+  els.deleteEvent.classList.toggle("hidden", !event || !editable || !recoveryEnabled);
+  els.eventForm.querySelector("button[type='submit']").classList.toggle("hidden", !editable);
+  els.eventForm.querySelectorAll("input:not([type='hidden']), select, textarea").forEach(control => {
+    control.disabled = !editable;
+  });
   els.eventTitle.value = event?.title || "";
   els.eventOwner.value = event?.ownerId || ownerId;
   els.eventStatus.value = event?.status || "pending";
@@ -800,9 +1001,14 @@ async function init() {
     els.membersPanel.classList.toggle("hidden", button.dataset.teamTab !== "members");
     els.groupsPanel.classList.toggle("hidden", button.dataset.teamTab !== "groups");
     els.accountsPanel.classList.toggle("hidden", button.dataset.teamTab !== "accounts");
+    els.recoveryPanel.classList.toggle("hidden", button.dataset.teamTab !== "recovery");
     if (button.dataset.teamTab === "accounts") loadManagedAccounts();
+    if (button.dataset.teamTab === "recovery") loadRecoveryCenter();
   }));
   els.refreshAccounts.addEventListener("click", loadManagedAccounts);
+  els.refreshRecovery.addEventListener("click", loadRecoveryCenter);
+  els.createBackup.addEventListener("click", createCloudBackup);
+  els.exportBackup.addEventListener("click", exportCurrentData);
   els.memberForm.addEventListener("submit", async event => {
     event.preventDefault();
     if (!els.memberGroup.value) return showToast("请先创建一个小组");
@@ -855,7 +1061,7 @@ async function init() {
   document.querySelectorAll(".nav-item[data-view]").forEach(button => {
     button.addEventListener("click", async () => {
       currentView = button.dataset.view;
-      if (currentView === "conflicts" && conflictIds().size === 0) showToast("当前没有人员排期冲突");
+      if (currentView === "conflicts" && conflictDetails().length === 0) showToast("当前没有检测到排期风险");
       if (currentView === "activity") await loadActivityLogs();
       render();
     });
@@ -873,13 +1079,20 @@ async function init() {
       status: els.eventStatus.value, start: els.eventStart.value, end: els.eventEnd.value,
       city: els.eventCity.value.trim(), type: els.eventType.value.trim() || "未分类", venue: els.eventVenue.value.trim(), notes: els.eventNotes.value.trim()
     };
+    const candidateEvents = events.filter(item => item.id !== payload.id).concat(payload);
+    const candidateIssues = conflictDetails(candidateEvents).filter(issue => issue.eventIds.includes(payload.id));
+    if (candidateIssues.length) {
+      const summary = [...new Set(candidateIssues.map(issue => issue.title))].join("、");
+      if (!confirm(`系统检测到：${summary}。仍然保存这条日程吗？`)) return;
+    }
     const index = events.findIndex(item => item.id === payload.id);
     const saved = await saveEvents(index >= 0 ? "日程修改已同步" : "新日程已同步给团队", payload);
     if (saved) closeModal();
   });
   els.deleteEvent.addEventListener("click", async () => {
+    if (!recoveryEnabled) return showToast("请先执行 v1.5.0 数据库升级，再使用可恢复删除");
     const event = events.find(item => item.id === els.eventId.value);
-    if (!event || !confirm(`确定删除“${event.title}”吗？`)) return;
+    if (!event || !confirm(`确定删除“${event.title}”吗？该日程会进入“安全与恢复”，管理员可恢复。`)) return;
     const { error } = await supabaseClient.rpc("delete_schedule", { p_assignment_id: event.id });
     if (error) return showToast(error.message);
     await loadCloudData();

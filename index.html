@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>K-Loud</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=1.4.4" />
-  <link rel="icon" href="./icon.svg?v=1.4.4" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=1.4.4" />
+  <link rel="manifest" href="./manifest.webmanifest?v=1.5.0" />
+  <link rel="icon" href="./icon.svg?v=1.5.0" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css?v=1.5.0" />
 </head>
 <body>
   <div class="auth-screen hidden" id="authScreen">
@@ -56,14 +56,14 @@
 
       <div class="sync-card">
         <span class="sync-dot"></span>
-        <div><strong>云端数据同步</strong><small id="lastSync">正在连接</small><small class="app-version">版本 1.4.0</small></div>
+        <div><strong>云端数据同步</strong><small id="lastSync">正在连接</small><small class="app-version">版本 1.5.0</small></div>
       </div>
     </aside>
 
     <main class="main-content">
       <header class="topbar">
         <div>
-          <div class="eyebrow">工作排期总览 · v1.4.4</div>
+          <div class="eyebrow">工作排期总览 · v1.5.0</div>
           <h1 id="pageTitle">团队实时排期</h1>
           <div class="mobile-sync-status" id="mobileSyncStatus">正在检查云端连接…</div>
         </div>
@@ -118,6 +118,14 @@
             <button data-days="30">30天</button>
           </div>
         </div>
+      </section>
+
+      <section class="conflict-insights hidden" id="conflictInsights">
+        <div class="project-list-header">
+          <div><span class="eyebrow">自动风险识别</span><h2>冲突与赶场预警</h2></div>
+          <span id="conflictInsightCount"></span>
+        </div>
+        <div class="conflict-list" id="conflictList"></div>
       </section>
 
       <section class="schedule-card">
@@ -225,6 +233,7 @@
         <button class="team-tab active" data-team-tab="members">成员管理</button>
         <button class="team-tab" data-team-tab="groups">小组管理</button>
         <button class="team-tab" data-team-tab="accounts">账号权限</button>
+        <button class="team-tab" data-team-tab="recovery">安全与恢复</button>
       </div>
 
       <div class="team-panel" id="membersPanel">
@@ -250,6 +259,23 @@
         </div>
         <div class="account-help">账号需先在 Supabase Authentication → Users 创建。然后在这里直接绑定成员和权限。</div>
         <div class="setting-list account-setting-list" id="accountList"></div>
+      </div>
+
+      <div class="team-panel hidden" id="recoveryPanel">
+        <div class="security-status" id="securityStatus">正在检查权限配置…</div>
+        <div class="setting-toolbar">
+          <div><strong>云端备份</strong><span id="backupCountLabel">尚未读取</span></div>
+          <div class="setting-actions">
+            <button class="icon-button" type="button" id="exportBackup">导出 JSON</button>
+            <button class="primary-button" type="button" id="createBackup">创建云端快照</button>
+          </div>
+        </div>
+        <div class="setting-list" id="backupList"></div>
+        <div class="setting-toolbar recovery-toolbar">
+          <div><strong>最近删除</strong><span id="trashCountLabel">尚未读取</span></div>
+          <button class="icon-button" type="button" id="refreshRecovery">刷新</button>
+        </div>
+        <div class="setting-list" id="trashList"></div>
       </div>
 
       <div class="team-modal-note">成员、小组和账号权限变更均保存到云端。</div>
@@ -297,6 +323,6 @@
   <div class="toast" id="toast"></div>
   <script>window.APP_CONFIG = __K_LOUD_CONFIG__;</script>
   <script src="./supabase.js?v=2.108.2"></script>
-  <script src="./app.js?v=1.4.4"></script>
+  <script src="./app.js?v=1.5.0"></script>
 </body>
 </html>

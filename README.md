@@ -31,6 +31,19 @@
 - `editor`：查看和编辑日程
 - `viewer`：只读
 
+## v1.5.0 安全与恢复升级
+
+部署前，在 Supabase SQL Editor 完整执行：
+
+`supabase/migrations/202606240005_security_recovery_conflicts.sql`
+
+升级后提供：
+
+- 最后一个管理员保护与 RLS 权限自检
+- 日程软删除、最近删除恢复
+- 云端数据快照、JSON 下载及快照恢复
+- 撞期、跨城赶场、超长工时和休息不足预警
+
 ## Supabase初始化
 
 按照 [supabase/README.md](supabase/README.md) 执行数据库迁移，并创建第一个管理员账号。
