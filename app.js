@@ -26,7 +26,7 @@ const els = Object.fromEntries([
   "scheduleGrid","rangeTitle","visibleEventCount","progressCount","pendingCount","conflictCount",
   "navConflictCount","searchInput","departmentFilter","rangeSelector","eventModal","eventForm",
   "eventId","eventTitle","eventOwner","eventStatus","eventStart","eventEnd","eventCity","eventType",
-  "eventVenue","eventNotes","modalTitle","deleteEvent","toast","lastSync","scheduleScroll"
+  "eventVenue","eventNotes","eventColor","eventColorValue","modalTitle","deleteEvent","toast","lastSync","scheduleScroll"
   ,"pageTitle","projectListCard","projectTableBody","projectListCount"
   ,"teamModal","membersPanel","groupsPanel","memberForm","memberId","memberName","memberRole"
   ,"memberGroup","memberList","groupForm","groupOriginalName","groupName","groupList"
@@ -40,6 +40,7 @@ const els = Object.fromEntries([
   ,"conflictInsights","conflictInsightCount","conflictList"
   ,"recoveryPanel","securityStatus","backupCountLabel","backupList","trashCountLabel","trashList"
   ,"createBackup","exportBackup","refreshRecovery"
+  ,"exportPdf","exportCsv"
 ].map(id => [id, document.getElementById(id)]));
 
 function setSyncStatus(text, state = "connecting") {
@@ -66,6 +67,7 @@ async function saveEvents(message = "排期已实时同步", changedEvent) {
       p_business_type: changedEvent.type || "未分类",
       p_venue: changedEvent.venue || "",
       p_notes: changedEvent.notes || "",
+      p_color: changedEvent.color || "#4778f5",
     });
     if (error) throw error;
     if (!changedEvent.id && data?.[0]) {
@@ -250,6 +252,7 @@ async function loadCloudData() {
       type: project?.business_type || "未分类",
       venue: project?.venue || "",
       notes: project?.notes || "",
+      color: assignment.color || "#4778f5",
     };
   });
   refreshPeopleControls(); renderTeamSettings(); render();
@@ -373,15 +376,6 @@ function conflictDetails(sourceEvents = events) {
     const list = byOwner.get(event.ownerId) || [];
     list.push(event);
     byOwner.set(event.ownerId, list);
-    const duration = hoursBetween(event.start, event.end);
-    if (duration >= 12) {
-      issues.push({
-        key: `workload:${event.id}`, type: "workload", severity: "warning",
-        eventIds: [event.id], ownerId: event.ownerId,
-        title: "超长连续工作",
-        detail: `${event.title} 连续 ${Math.round(duration * 10) / 10} 小时`,
-      });
-    }
   });
   for (const [ownerId, ownerEvents] of byOwner) {
     const sorted = [...ownerEvents].sort((a,b) => new Date(a.start) - new Date(b.start));
@@ -407,13 +401,6 @@ function conflictDetails(sourceEvents = events) {
           eventIds: [first.id, next.id], ownerId,
           title: "跨城赶场时间不足",
           detail: `${first.city} → ${next.city}，仅间隔 ${Math.round(gap * 10) / 10} 小时`,
-        });
-      } else if (gap < 8) {
-        issues.push({
-          key: `rest:${first.id}:${next.id}`, type: "workload", severity: "warning",
-          eventIds: [first.id, next.id], ownerId,
-          title: "连续项目休息不足",
-          detail: `${first.title} 后仅休息 ${Math.round(gap * 10) / 10} 小时`,
         });
       }
     }
@@ -527,7 +514,7 @@ function renderViewChrome() {
 }
 
 function renderConflictInsights(issues = conflictDetails()) {
-  const typeLabel = { overlap: "撞期", travel: "赶场", workload: "工时" };
+  const typeLabel = { overlap: "撞期", travel: "赶场" };
   els.conflictInsightCount.textContent = `${issues.length} 项风险`;
   els.conflictList.innerHTML = issues.length ? issues.map(issue => {
     const owner = personById(issue.ownerId);
@@ -612,7 +599,8 @@ function describeAuditChange(log) {
   const oldData = log.old_data || {}, newData = log.new_data || {};
   const fields = [
     ["title","项目名称"], ["owner_id","负责人"], ["start_at","开始时间"], ["end_at","结束时间"],
-    ["status","状态"], ["city","城市"], ["business_type","业务类型"], ["venue","场地"], ["notes","备注"]
+    ["status","状态"], ["city","城市"], ["business_type","业务类型"], ["venue","场地"],
+    ["notes","备注"], ["color","日程颜色"]
   ];
   const changed = fields.filter(([key]) => String(oldData[key] ?? "") !== String(newData[key] ?? "")).map(([,label]) => label);
   return changed.length ? `修改：${changed.join("、")}` : "更新了日程内容";
@@ -717,12 +705,82 @@ async function createCloudBackup() {
 
 function exportCurrentData() {
   downloadJson({
-    version: "1.5.0",
+    version: "1.6.0",
     exportedAt: new Date().toISOString(),
     teamId: currentProfile.team_id,
     members: people,
     schedules: events,
   }, `K-Loud-${isoDate(new Date())}.json`);
+}
+
+function exportScheduleCsv() {
+  const statusText = { confirmed:"已确认", pending:"待确认", progress:"进行中", draft:"草稿" };
+  const rows = [
+    ["项目名称","负责人","小组","开始时间","结束时间","城市","场地","业务类型","状态","备注","颜色"],
+    ...filteredEvents()
+      .sort((a,b) => new Date(a.start) - new Date(b.start))
+      .map(event => {
+        const owner = personById(event.ownerId);
+        return [
+          event.title, owner?.name || "", owner?.dept || "", event.start.replace("T"," "),
+          event.end.replace("T"," "), event.city, event.venue, event.type,
+          statusText[event.status] || event.status, event.notes, normalizeColor(event.color),
+        ];
+      })
+  ];
+  const csv = "\ufeff" + rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `K-Loud排期-${isoDate(new Date())}.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast(`已导出 ${rows.length - 1} 条日程`);
+}
+
+function csvCell(value) {
+  return `"${String(value ?? "").replaceAll('"','""')}"`;
+}
+
+function exportSchedulePdf() {
+  const popup = window.open("", "_blank");
+  if (!popup) return showToast("浏览器阻止了导出窗口，请允许弹出窗口后重试");
+  const statusText = { confirmed:"已确认", pending:"待确认", progress:"进行中", draft:"草稿" };
+  const list = filteredEvents().sort((a,b) => new Date(a.start) - new Date(b.start));
+  const rows = list.map(event => {
+    const owner = personById(event.ownerId);
+    return `<tr>
+      <td><span class="color-dot" style="background:${normalizeColor(event.color)}"></span>${escapeHtml(event.title)}</td>
+      <td>${escapeHtml(owner?.name || "未分配")}</td>
+      <td>${escapeHtml(event.start.replace("T"," "))}<br>至 ${escapeHtml(event.end.replace("T"," "))}</td>
+      <td>${escapeHtml(event.city || "")}<br>${escapeHtml(event.venue || "")}</td>
+      <td>${escapeHtml(event.type)}</td>
+      <td>${escapeHtml(statusText[event.status] || event.status)}</td>
+      <td>${escapeHtml(event.notes || "")}</td>
+    </tr>`;
+  }).join("");
+  popup.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8">
+    <title>K-Loud排期-${isoDate(new Date())}</title>
+    <style>
+      @page{size:A4 landscape;margin:12mm}
+      body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#182230;margin:0}
+      header{display:flex;justify-content:space-between;align-items:end;margin-bottom:14px}
+      h1{font-size:22px;margin:0}.meta{color:#667085;font-size:11px}
+      table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:9px}
+      th,td{border:1px solid #dfe4ec;padding:7px;vertical-align:top;word-break:break-word}
+      th{background:#f4f6fa;text-align:left;font-size:9px}
+      th:nth-child(1){width:16%}th:nth-child(2){width:8%}th:nth-child(3){width:17%}
+      th:nth-child(4){width:12%}th:nth-child(5){width:9%}th:nth-child(6){width:7%}
+      .color-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+      .empty{padding:50px;text-align:center;color:#667085}
+    </style></head><body>
+    <header><div><h1>K-Loud 团队排期</h1><div class="meta">导出时间：${escapeHtml(new Date().toLocaleString("zh-CN",{hour12:false}))}</div></div>
+    <div class="meta">共 ${list.length} 条日程</div></header>
+    ${list.length ? `<table><thead><tr><th>项目</th><th>负责人</th><th>时间</th><th>城市/场地</th><th>类型</th><th>状态</th><th>备注</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">当前筛选下没有日程</div>'}
+    <script>window.onload=()=>setTimeout(()=>window.print(),150);<\/script>
+    </body></html>`);
+  popup.document.close();
 }
 
 function formatAuditTime(value) {
@@ -739,10 +797,24 @@ function renderPersonEvents(personId, visible, conflicts) {
     const left = `calc(${startIndex} * var(--day-width) + 5px)`;
     const width = `calc(${widthDays} * var(--day-width) - 10px)`;
     const conflict = conflicts.has(e.id);
-    return `<article class="event-block ${e.status} ${conflict?"has-conflict":""}" data-event="${e.id}" style="left:${left};width:${width}" title="${e.title}｜${e.city}｜${e.venue}">
-      <strong>${e.title}</strong><span>${e.city || "未填写"} · ${e.type}</span>${conflict?'<b class="conflict-badge">!</b>':""}
+    const color = normalizeColor(e.color);
+    const textColor = readableTextColor(color);
+    const note = e.notes ? `<span class="event-note">${escapeHtml(e.notes)}</span>` : "";
+    return `<article class="event-block custom-color ${conflict?"has-conflict":""}" data-event="${e.id}"
+      style="left:${left};width:${width};--event-color:${color};--event-text:${textColor}" title="${escapeAttribute([e.title,e.city,e.venue,e.notes].filter(Boolean).join("｜"))}">
+      <strong>${escapeHtml(e.title)}</strong><span>${escapeHtml(e.city || "未填写")} · ${escapeHtml(e.type)}</span>${note}${conflict?'<b class="conflict-badge">!</b>':""}
     </article>`;
   }).join("");
+}
+
+function normalizeColor(value) {
+  return /^#[0-9a-f]{6}$/i.test(value || "") ? value : "#4778f5";
+}
+
+function readableTextColor(hex) {
+  const value = normalizeColor(hex).slice(1);
+  const [r,g,b] = [0,2,4].map(index => parseInt(value.slice(index,index+2), 16));
+  return (r * 299 + g * 587 + b * 114) / 1000 > 155 ? "#182230" : "#ffffff";
 }
 
 function bindEventBlocks() {
@@ -814,6 +886,8 @@ function openModal(event, ownerId = null, date = isoDate(new Date())) {
   els.eventType.value = event?.type || "";
   els.eventVenue.value = event?.venue || "";
   els.eventNotes.value = event?.notes || "";
+  els.eventColor.value = normalizeColor(event?.color || "#4778f5");
+  els.eventColorValue.textContent = els.eventColor.value.toUpperCase();
   setTimeout(() => els.eventTitle.focus(), 30);
 }
 function closeModal() { els.eventModal.classList.add("hidden"); }
@@ -977,6 +1051,11 @@ async function init() {
   }));
   els.searchInput.addEventListener("input", render);
   els.departmentFilter.addEventListener("change", render);
+  els.eventColor.addEventListener("input", () => {
+    els.eventColorValue.textContent = els.eventColor.value.toUpperCase();
+  });
+  els.exportPdf.addEventListener("click", exportSchedulePdf);
+  els.exportCsv.addEventListener("click", exportScheduleCsv);
   els.rangeSelector.addEventListener("click", e => {
     const button = e.target.closest("button[data-days]"); if (!button) return;
     days = Number(button.dataset.days);
@@ -1077,7 +1156,9 @@ async function init() {
       projectId: events.find(item => item.id === els.eventId.value)?.projectId || null,
       title: els.eventTitle.value.trim(), ownerId: els.eventOwner.value,
       status: els.eventStatus.value, start: els.eventStart.value, end: els.eventEnd.value,
-      city: els.eventCity.value.trim(), type: els.eventType.value.trim() || "未分类", venue: els.eventVenue.value.trim(), notes: els.eventNotes.value.trim()
+      city: els.eventCity.value.trim(), type: els.eventType.value.trim() || "未分类",
+      venue: els.eventVenue.value.trim(), notes: els.eventNotes.value.trim(),
+      color: normalizeColor(els.eventColor.value),
     };
     const candidateEvents = events.filter(item => item.id !== payload.id).concat(payload);
     const candidateIssues = conflictDetails(candidateEvents).filter(issue => issue.eventIds.includes(payload.id));
