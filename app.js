@@ -1,4 +1,5 @@
 const DAY_MS = 86400000;
+const RGB_PALETTE = ["#ef4444", "#22c55e", "#3b82f6"];
 let backendAvailable = false;
 let deferredInstallPrompt = null;
 let supabaseClient = null;
@@ -41,6 +42,8 @@ const els = Object.fromEntries([
   ,"recoveryPanel","securityStatus","backupCountLabel","backupList","trashCountLabel","trashList"
   ,"createBackup","exportBackup","refreshRecovery"
   ,"exportPdf","exportCsv"
+  ,"exportModal","exportForm","exportFormat","exportStartDate","exportEndDate"
+  ,"exportModalTitle","closeExportModal","cancelExport"
 ].map(id => [id, document.getElementById(id)]));
 
 function setSyncStatus(text, state = "connecting") {
@@ -713,12 +716,32 @@ function exportCurrentData() {
   }, `K-Loud-${isoDate(new Date())}.json`);
 }
 
-function exportScheduleCsv() {
+function eventsForExport(startDate, endDate) {
+  const start = startOfDay(new Date(`${startDate}T00:00:00`));
+  const end = new Date(`${endDate}T23:59:59`);
+  return filteredEvents()
+    .filter(event => new Date(event.start) <= end && new Date(event.end) >= start)
+    .sort((a,b) => new Date(a.start) - new Date(b.start));
+}
+
+function openExportModal(format) {
+  els.exportFormat.value = format;
+  els.exportModalTitle.textContent = `导出 ${format.toUpperCase()}`;
+  els.exportStartDate.value = isoDate(rangeStart);
+  els.exportEndDate.value = isoDate(addDays(rangeStart, days - 1));
+  els.exportModal.classList.remove("hidden");
+}
+
+function closeExportModal() {
+  els.exportModal.classList.add("hidden");
+}
+
+function exportScheduleCsv(startDate, endDate) {
   const statusText = { confirmed:"已确认", pending:"待确认", progress:"进行中", draft:"草稿" };
+  const exportEvents = eventsForExport(startDate, endDate);
   const rows = [
     ["项目名称","负责人","小组","开始时间","结束时间","城市","场地","业务类型","状态","备注","颜色"],
-    ...filteredEvents()
-      .sort((a,b) => new Date(a.start) - new Date(b.start))
+    ...exportEvents
       .map(event => {
         const owner = personById(event.ownerId);
         return [
@@ -733,7 +756,7 @@ function exportScheduleCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `K-Loud排期-${isoDate(new Date())}.csv`;
+  link.download = `K-Loud排期-${startDate}-${endDate}.csv`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast(`已导出 ${rows.length - 1} 条日程`);
@@ -743,11 +766,11 @@ function csvCell(value) {
   return `"${String(value ?? "").replaceAll('"','""')}"`;
 }
 
-function exportSchedulePdf() {
+function exportSchedulePdf(startDate, endDate) {
   const popup = window.open("", "_blank");
   if (!popup) return showToast("浏览器阻止了导出窗口，请允许弹出窗口后重试");
   const statusText = { confirmed:"已确认", pending:"待确认", progress:"进行中", draft:"草稿" };
-  const list = filteredEvents().sort((a,b) => new Date(a.start) - new Date(b.start));
+  const list = eventsForExport(startDate, endDate);
   const rows = list.map(event => {
     const owner = personById(event.ownerId);
     return `<tr>
@@ -761,7 +784,7 @@ function exportSchedulePdf() {
     </tr>`;
   }).join("");
   popup.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8">
-    <title>K-Loud排期-${isoDate(new Date())}</title>
+    <title>K-Loud排期-${startDate}-${endDate}</title>
     <style>
       @page{size:A4 landscape;margin:12mm}
       body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#182230;margin:0}
@@ -775,7 +798,7 @@ function exportSchedulePdf() {
       .color-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
       .empty{padding:50px;text-align:center;color:#667085}
     </style></head><body>
-    <header><div><h1>K-Loud 团队排期</h1><div class="meta">导出时间：${escapeHtml(new Date().toLocaleString("zh-CN",{hour12:false}))}</div></div>
+    <header><div><h1>K-Loud 团队排期</h1><div class="meta">日期范围：${startDate} 至 ${endDate} · 导出时间：${escapeHtml(new Date().toLocaleString("zh-CN",{hour12:false}))}</div></div>
     <div class="meta">共 ${list.length} 条日程</div></header>
     ${list.length ? `<table><thead><tr><th>项目</th><th>负责人</th><th>时间</th><th>城市/场地</th><th>类型</th><th>状态</th><th>备注</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">当前筛选下没有日程</div>'}
     <script>window.onload=()=>setTimeout(()=>window.print(),150);<\/script>
@@ -809,6 +832,10 @@ function renderPersonEvents(personId, visible, conflicts) {
 
 function normalizeColor(value) {
   return /^#[0-9a-f]{6}$/i.test(value || "") ? value : "#4778f5";
+}
+
+function nextDefaultEventColor() {
+  return RGB_PALETTE[events.length % RGB_PALETTE.length];
 }
 
 function readableTextColor(hex) {
@@ -886,7 +913,7 @@ function openModal(event, ownerId = null, date = isoDate(new Date())) {
   els.eventType.value = event?.type || "";
   els.eventVenue.value = event?.venue || "";
   els.eventNotes.value = event?.notes || "";
-  els.eventColor.value = normalizeColor(event?.color || "#4778f5");
+  els.eventColor.value = normalizeColor(event?.color || nextDefaultEventColor());
   els.eventColorValue.textContent = els.eventColor.value.toUpperCase();
   setTimeout(() => els.eventTitle.focus(), 30);
 }
@@ -1059,8 +1086,21 @@ async function init() {
   els.eventColor.addEventListener("input", () => {
     els.eventColorValue.textContent = els.eventColor.value.toUpperCase();
   });
-  els.exportPdf.addEventListener("click", exportSchedulePdf);
-  els.exportCsv.addEventListener("click", exportScheduleCsv);
+  els.exportPdf.addEventListener("click", () => openExportModal("pdf"));
+  els.exportCsv.addEventListener("click", () => openExportModal("csv"));
+  els.closeExportModal.addEventListener("click", closeExportModal);
+  els.cancelExport.addEventListener("click", closeExportModal);
+  els.exportModal.addEventListener("click", event => {
+    if (event.target === els.exportModal) closeExportModal();
+  });
+  els.exportForm.addEventListener("submit", event => {
+    event.preventDefault();
+    if (els.exportEndDate.value < els.exportStartDate.value) return showToast("结束日期不能早于开始日期");
+    const format = els.exportFormat.value;
+    if (format === "pdf") exportSchedulePdf(els.exportStartDate.value, els.exportEndDate.value);
+    else exportScheduleCsv(els.exportStartDate.value, els.exportEndDate.value);
+    closeExportModal();
+  });
   els.rangeSelector.addEventListener("click", e => {
     const button = e.target.closest("button[data-days]"); if (!button) return;
     days = Number(button.dataset.days);
@@ -1186,7 +1226,7 @@ async function init() {
   });
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {
-      closeModal(); closeMemberEditor(); closeGroupEditor(); closeTeamModal();
+      closeModal(); closeExportModal(); closeMemberEditor(); closeGroupEditor(); closeTeamModal();
       document.body.classList.remove("schedule-expanded");
     }
   });

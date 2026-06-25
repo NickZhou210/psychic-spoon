@@ -65,6 +65,19 @@
 
 成员现在采用安全停用，不再物理删除；历史日程、备份和操作日志都会保留。
 
+## v1.7.0 导出范围、RGB 默认色与品牌 Logo
+
+在 Supabase SQL Editor 完整执行：
+
+`supabase/migrations/202606250003_rgb_default_colors.sql`
+
+升级后支持：
+
+- PDF、CSV 导出前选择开始与结束日期
+- 新建日程按红、绿、蓝顺序循环分配默认颜色
+- 原有手动选择颜色能力继续保留
+- 网站登录页和侧栏使用正式 K-Loud Logo
+
 ## Supabase初始化
 
 按照 [supabase/README.md](supabase/README.md) 执行数据库迁移，并创建第一个管理员账号。

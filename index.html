@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>K-Loud</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=1.6.1" />
-  <link rel="icon" href="./icon.svg?v=1.6.1" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=1.6.1" />
+  <link rel="manifest" href="./manifest.webmanifest?v=1.7.0" />
+  <link rel="icon" href="./icon.svg?v=1.7.0" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css?v=1.7.0" />
 </head>
 <body>
   <div class="auth-screen hidden" id="authScreen">
     <form class="auth-card" id="loginForm">
-      <div class="brand-mark auth-mark">排</div>
+      <div class="auth-logo-panel"><img src="./logo-kloud.png?v=1.7.0" alt="K-Loud" /></div>
       <div>
         <span class="eyebrow">Schedule Hub</span>
         <h1>登录 K-Loud</h1>
@@ -30,11 +30,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">排</div>
-        <div>
-          <strong>K-Loud</strong>
-          <span>Schedule Hub</span>
-        </div>
+        <img class="brand-logo" src="./logo-kloud.png?v=1.7.0" alt="K-Loud" />
       </div>
 
       <nav class="main-nav" aria-label="主导航">
@@ -56,14 +52,14 @@
 
       <div class="sync-card">
         <span class="sync-dot"></span>
-        <div><strong>云端数据同步</strong><small id="lastSync">正在连接</small><small class="app-version">版本 1.6.1</small></div>
+        <div><strong>云端数据同步</strong><small id="lastSync">正在连接</small><small class="app-version">版本 1.7.0</small></div>
       </div>
     </aside>
 
     <main class="main-content">
       <header class="topbar">
         <div>
-          <div class="eyebrow">工作排期总览 · v1.6.1</div>
+          <div class="eyebrow">工作排期总览 · v1.7.0</div>
           <h1 id="pageTitle">团队实时排期</h1>
           <div class="mobile-sync-status" id="mobileSyncStatus">正在检查云端连接…</div>
         </div>
@@ -229,6 +225,26 @@
     </form>
   </div>
 
+  <div class="modal-backdrop hidden nested-backdrop" id="exportModal">
+    <form class="modal compact-modal" id="exportForm">
+      <div class="modal-header">
+        <div><span class="eyebrow">导出范围</span><h2 id="exportModalTitle">导出排期</h2></div>
+        <button type="button" class="close-button" id="closeExportModal">×</button>
+      </div>
+      <input type="hidden" id="exportFormat" />
+      <div class="form-grid single-column-form">
+        <label>开始日期<input type="date" id="exportStartDate" required /></label>
+        <label>结束日期<input type="date" id="exportEndDate" required /></label>
+        <div class="export-range-help">导出与该日期范围有交集的日程，并继续应用当前状态和搜索筛选。</div>
+      </div>
+      <div class="modal-footer">
+        <div class="footer-spacer"></div>
+        <button class="icon-button" type="button" id="cancelExport">取消</button>
+        <button class="primary-button" type="submit">确认导出</button>
+      </div>
+    </form>
+  </div>
+
   <div class="modal-backdrop hidden" id="teamModal">
     <section class="modal team-modal">
       <div class="modal-header">
@@ -333,6 +349,6 @@
   <div class="toast" id="toast"></div>
   <script>window.APP_CONFIG = __K_LOUD_CONFIG__;</script>
   <script src="./supabase.js?v=2.108.2"></script>
-  <script src="./app.js?v=1.6.1"></script>
+  <script src="./app.js?v=1.7.0"></script>
 </body>
 </html>
