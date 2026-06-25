@@ -78,6 +78,14 @@
 - 原有手动选择颜色能力继续保留
 - 网站登录页和侧栏使用正式 K-Loud Logo
 
+## v1.7.1 PWA 与实时同步
+
+- iOS 主屏幕、Android PWA 和 maskable 图标统一使用 K-Loud 品牌符号
+- 增加 Apple Touch Icon、PWA 快捷入口和 standalone 配置
+- Realtime 按团队过滤，断线后指数退避自动重连
+- 网络恢复、手机回到前台、PWA 从后台唤醒时立即同步
+- 每 10 秒云端轮询兜底，避免移动系统挂起 WebSocket 后数据停滞
+
 ## Supabase初始化
 
 按照 [supabase/README.md](supabase/README.md) 执行数据库迁移，并创建第一个管理员账号。

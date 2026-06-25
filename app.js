@@ -3,6 +3,7 @@ const RGB_PALETTE = ["#ef4444", "#22c55e", "#3b82f6"];
 let backendAvailable = false;
 let deferredInstallPrompt = null;
 let supabaseClient = null;
+let authStateSubscription = null;
 let currentProfile = { role: "viewer", member_id: null, team_id: null, full_name: "" };
 let activityLogs = [];
 let activityLogError = null;
@@ -12,6 +13,14 @@ let cloudBackups = [];
 let permissionDiagnostics = null;
 let recoveryEnabled = false;
 let syncPollTimer = null;
+let realtimeChannel = null;
+let realtimeReconnectTimer = null;
+let realtimeReconnectAttempt = 0;
+let realtimeGeneration = 0;
+let realtimeSubscribed = false;
+let cloudReloadTimer = null;
+let cloudLoadPromise = null;
+let lastCloudSyncAt = 0;
 let reloadingForUpdate = false;
 let people = [];
 let teamGroups = [];
@@ -20,7 +29,9 @@ let days = window.matchMedia("(max-width: 760px)").matches ? 7 : 14;
 let rangeStart = startOfDay(new Date());
 let enabledStatuses = new Set(["confirmed", "pending", "progress", "draft"]);
 let dragState = null;
-let currentView = "overview";
+let currentView = ["overview","mine","conflicts","projects","activity"].includes(new URLSearchParams(location.search).get("view"))
+  ? new URLSearchParams(location.search).get("view")
+  : "overview";
 let currentUserId = null;
 
 const els = Object.fromEntries([
@@ -54,6 +65,20 @@ function setSyncStatus(text, state = "connecting") {
 
 function canEditEvents() { return backendAvailable && ["admin", "editor"].includes(currentProfile.role); }
 function canManageTeam() { return backendAvailable && currentProfile.role === "admin"; }
+
+function bindAuthStateSync() {
+  if (authStateSubscription || !supabaseClient) return;
+  const { data } = supabaseClient.auth.onAuthStateChange(event => {
+    if (event === "TOKEN_REFRESHED" && backendAvailable) {
+      realtimeSubscribed = false;
+      connectRealtimeStream();
+      scheduleCloudReload(currentView === "activity");
+    } else if (event === "SIGNED_OUT" && backendAvailable) {
+      location.reload();
+    }
+  });
+  authStateSubscription = data.subscription;
+}
 
 async function saveEvents(message = "排期已实时同步", changedEvent) {
   if (!canEditEvents()) return showToast("当前账号为只读权限");
@@ -124,6 +149,7 @@ async function connectBackend(sessionOverride = null) {
     throw new Error("Supabase browser client failed to load");
   }
   supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+  bindAuthStateSync();
   const session = sessionOverride || (await supabaseClient.auth.getSession()).data.session;
   if (!session) {
     els.authScreen.classList.remove("hidden");
@@ -178,6 +204,7 @@ function bindLoginForm() {
       }
       if (!window.supabase?.createClient) throw new Error("Supabase客户端加载失败，请刷新页面");
       supabaseClient ||= window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+      bindAuthStateSync();
       const { data, error } = await supabaseClient.auth.signInWithPassword({
         email: els.loginEmail.value.trim(),
         password: els.loginPassword.value,
@@ -200,13 +227,44 @@ function bindLoginForm() {
   });
 }
 
-function connectRealtimeStream() {
-  supabaseClient.channel("schedule-live")
-    .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, loadCloudData)
-    .on("postgres_changes", { event: "*", schema: "public", table: "members" }, loadCloudData)
-    .on("postgres_changes", { event: "*", schema: "public", table: "assignments" }, loadCloudData)
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "event_audit_logs" }, loadActivityLogs)
+function scheduleCloudReload(includeLogs = false) {
+  clearTimeout(cloudReloadTimer);
+  cloudReloadTimer = setTimeout(async () => {
+    try {
+      await loadCloudData();
+      if (includeLogs || currentView === "activity") await loadActivityLogs();
+    } catch (error) {
+      console.warn("Cloud reload failed", error);
+    }
+  }, 180);
+}
+
+function scheduleRealtimeReconnect() {
+  clearTimeout(realtimeReconnectTimer);
+  if (!backendAvailable || !navigator.onLine) return;
+  const delay = Math.min(30000, 1000 * (2 ** Math.min(realtimeReconnectAttempt, 5)));
+  realtimeReconnectAttempt += 1;
+  realtimeReconnectTimer = setTimeout(connectRealtimeStream, delay);
+}
+
+async function connectRealtimeStream() {
+  if (!backendAvailable || !supabaseClient || !currentProfile.team_id || !navigator.onLine) return;
+  clearTimeout(realtimeReconnectTimer);
+  realtimeSubscribed = false;
+  const generation = ++realtimeGeneration;
+  if (realtimeChannel) {
+    const oldChannel = realtimeChannel;
+    realtimeChannel = null;
+    await supabaseClient.removeChannel(oldChannel).catch(() => {});
+  }
+  const teamFilter = `team_id=eq.${currentProfile.team_id}`;
+  realtimeChannel = supabaseClient.channel(`schedule-live-${currentProfile.team_id}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "projects", filter: teamFilter }, () => scheduleCloudReload())
+    .on("postgres_changes", { event: "*", schema: "public", table: "members", filter: teamFilter }, () => scheduleCloudReload())
+    .on("postgres_changes", { event: "*", schema: "public", table: "assignments", filter: teamFilter }, () => scheduleCloudReload())
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "event_audit_logs", filter: teamFilter }, () => scheduleCloudReload(true))
     .subscribe(status => {
+      if (generation !== realtimeGeneration) return;
       const statusText = {
         SUBSCRIBED: "Supabase实时连接",
         CHANNEL_ERROR: "实时连接异常 · 自动轮询",
@@ -217,6 +275,14 @@ function connectRealtimeStream() {
         statusText[status] || "正在连接云端…",
         status === "SUBSCRIBED" ? "online" : status === "CHANNEL_ERROR" ? "error" : "connecting"
       );
+      if (status === "SUBSCRIBED") {
+        realtimeSubscribed = true;
+        realtimeReconnectAttempt = 0;
+        scheduleCloudReload(currentView === "activity");
+      } else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
+        realtimeSubscribed = false;
+        scheduleRealtimeReconnect();
+      }
     });
 }
 async function loadEventsFromSupabase() {
@@ -227,38 +293,44 @@ async function loadTeamFromSupabase() {
 }
 async function loadCloudData() {
   if (!backendAvailable || !currentProfile.team_id) return;
-  const [{ data: team, error: teamError }, { data: memberRows, error: memberError }, { data: projectRows, error: projectError }, { data: assignmentRows, error: assignmentError }] = await Promise.all([
-    supabaseClient.from("teams").select("id,name,groups").eq("id", currentProfile.team_id).single(),
-    supabaseClient.from("members").select("*").order("name"),
-    supabaseClient.from("projects").select("*"),
-    supabaseClient.from("assignments").select("*").order("start_at"),
-  ]);
-  const error = teamError || memberError || projectError || assignmentError;
-  if (error) {
-    setSyncStatus("云端数据读取失败", "error");
-    throw error;
-  }
-  people = (memberRows || []).map(fromPersonRow);
-  teamGroups = Array.isArray(team.groups) ? team.groups : [];
-  const projectsById = new Map((projectRows || []).map(project => [project.id, project]));
-  events = (assignmentRows || []).map(assignment => {
-    const project = projectsById.get(assignment.project_id);
-    return {
-      id: assignment.id,
-      projectId: assignment.project_id,
-      title: project?.title || "未命名项目",
-      ownerId: assignment.member_id,
-      start: String(assignment.start_at).slice(0,16),
-      end: String(assignment.end_at).slice(0,16),
-      status: assignment.status,
-      city: project?.city || "",
-      type: project?.business_type || "未分类",
-      venue: project?.venue || "",
-      notes: project?.notes || "",
-      color: assignment.color || "#4778f5",
-    };
-  });
-  refreshPeopleControls(); renderTeamSettings(); render();
+  if (cloudLoadPromise) return cloudLoadPromise;
+  cloudLoadPromise = (async () => {
+    const [{ data: team, error: teamError }, { data: memberRows, error: memberError }, { data: projectRows, error: projectError }, { data: assignmentRows, error: assignmentError }] = await Promise.all([
+      supabaseClient.from("teams").select("id,name,groups").eq("id", currentProfile.team_id).single(),
+      supabaseClient.from("members").select("*").order("name"),
+      supabaseClient.from("projects").select("*"),
+      supabaseClient.from("assignments").select("*").order("start_at"),
+    ]);
+    const error = teamError || memberError || projectError || assignmentError;
+    if (error) {
+      setSyncStatus("云端数据读取失败", "error");
+      throw error;
+    }
+    people = (memberRows || []).map(fromPersonRow);
+    teamGroups = Array.isArray(team.groups) ? team.groups : [];
+    const projectsById = new Map((projectRows || []).map(project => [project.id, project]));
+    events = (assignmentRows || []).map(assignment => {
+      const project = projectsById.get(assignment.project_id);
+      return {
+        id: assignment.id,
+        projectId: assignment.project_id,
+        title: project?.title || "未命名项目",
+        ownerId: assignment.member_id,
+        start: String(assignment.start_at).slice(0,16),
+        end: String(assignment.end_at).slice(0,16),
+        status: assignment.status,
+        city: project?.city || "",
+        type: project?.business_type || "未分类",
+        venue: project?.venue || "",
+        notes: project?.notes || "",
+        color: assignment.color || "#4778f5",
+      };
+    });
+    lastCloudSyncAt = Date.now();
+    if (!realtimeSubscribed) setSyncStatus("云端轮询已同步", "warning");
+    refreshPeopleControls(); renderTeamSettings(); render();
+  })().finally(() => { cloudLoadPromise = null; });
+  return cloudLoadPromise;
 }
 async function loadActivityLogs() {
   if (!backendAvailable) return;
@@ -281,8 +353,8 @@ async function loadActivityLogs() {
 function startSyncFallback() {
   clearInterval(syncPollTimer);
   syncPollTimer = setInterval(() => {
-    if (document.visibilityState === "visible") loadEventsFromSupabase();
-  }, 15000);
+    if (document.visibilityState === "visible" && navigator.onLine) scheduleCloudReload(currentView === "activity");
+  }, 10000);
 }
 
 async function checkSystemStatus() {
@@ -1231,13 +1303,32 @@ async function init() {
     }
   });
   window.addEventListener("focus", () => {
-    if (backendAvailable) {
-      loadEventsFromSupabase();
-      if (currentView === "activity") loadActivityLogs();
-    }
+    if (backendAvailable && navigator.onLine) scheduleCloudReload(currentView === "activity");
   });
   document.addEventListener("visibilitychange", () => {
-    if (backendAvailable && document.visibilityState === "visible") loadEventsFromSupabase();
+    if (backendAvailable && document.visibilityState === "visible" && navigator.onLine) {
+      if (Date.now() - lastCloudSyncAt > 5000) scheduleCloudReload(currentView === "activity");
+      if (!realtimeSubscribed) connectRealtimeStream();
+    }
+  });
+  window.addEventListener("online", () => {
+    if (!backendAvailable) return;
+    setSyncStatus("网络已恢复 · 正在同步", "connecting");
+    realtimeSubscribed = false;
+    realtimeReconnectAttempt = 0;
+    connectRealtimeStream();
+    scheduleCloudReload(true);
+  });
+  window.addEventListener("offline", () => {
+    clearTimeout(realtimeReconnectTimer);
+    realtimeSubscribed = false;
+    setSyncStatus("网络已断开 · 等待恢复", "error");
+  });
+  window.addEventListener("pageshow", event => {
+    if (backendAvailable && navigator.onLine && (event.persisted || Date.now() - lastCloudSyncAt > 5000)) {
+      scheduleCloudReload(currentView === "activity");
+      if (!realtimeSubscribed) connectRealtimeStream();
+    }
   });
   els.expandSchedule.addEventListener("click", () => {
     document.body.classList.add("schedule-expanded");

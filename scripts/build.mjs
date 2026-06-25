@@ -6,7 +6,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(root, "dist");
 const files = [
   "index.html", "styles.css", "app.js", "service-worker.js",
-  "manifest.webmanifest", "icon.svg", "logo-kloud.png"
+  "manifest.webmanifest", "icon.svg", "logo-kloud.png",
+  "apple-touch-icon.png", "pwa-192.png", "pwa-512.png", "pwa-maskable-512.png"
 ];
 const supabaseBrowserClient = path.join(root, "node_modules", "@supabase", "supabase-js", "dist", "umd", "supabase.js");
 

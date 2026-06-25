@@ -7,9 +7,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>K-Loud</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=1.7.0" />
-  <link rel="icon" href="./icon.svg?v=1.7.0" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=1.7.0" />
+  <link rel="manifest" href="./manifest.webmanifest?v=1.7.1" />
+  <link rel="icon" href="./pwa-192.png?v=1.7.1" type="image/png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=1.7.1" />
+  <meta name="apple-mobile-web-app-title" content="K-Loud" />
+  <link rel="stylesheet" href="./styles.css?v=1.7.1" />
 </head>
 <body>
   <div class="auth-screen hidden" id="authScreen">
@@ -52,14 +54,14 @@
 
       <div class="sync-card">
         <span class="sync-dot"></span>
-        <div><strong>云端数据同步</strong><small id="lastSync">正在连接</small><small class="app-version">版本 1.7.0</small></div>
+        <div><strong>云端数据同步</strong><small id="lastSync">正在连接</small><small class="app-version">版本 1.7.1</small></div>
       </div>
     </aside>
 
     <main class="main-content">
       <header class="topbar">
         <div>
-          <div class="eyebrow">工作排期总览 · v1.7.0</div>
+          <div class="eyebrow">工作排期总览 · v1.7.1</div>
           <h1 id="pageTitle">团队实时排期</h1>
           <div class="mobile-sync-status" id="mobileSyncStatus">正在检查云端连接…</div>
         </div>
@@ -349,6 +351,6 @@
   <div class="toast" id="toast"></div>
   <script>window.APP_CONFIG = __K_LOUD_CONFIG__;</script>
   <script src="./supabase.js?v=2.108.2"></script>
-  <script src="./app.js?v=1.7.0"></script>
+  <script src="./app.js?v=1.7.1"></script>
 </body>
 </html>

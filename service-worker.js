@@ -1,12 +1,15 @@
-const CACHE = "k-loud-shell-v19";
+const CACHE = "k-loud-shell-v20";
 const SHELL = [
   "/",
   "/index.html",
-  "/styles.css?v=1.7.0",
-  "/app.js?v=1.7.0",
+  "/styles.css?v=1.7.1",
+  "/app.js?v=1.7.1",
   "/supabase.js?v=2.108.2",
-  "/manifest.webmanifest?v=1.7.0",
-  "/icon.svg?v=1.7.0",
+  "/manifest.webmanifest?v=1.7.1",
+  "/pwa-192.png?v=1.7.1",
+  "/pwa-512.png?v=1.7.1",
+  "/pwa-maskable-512.png?v=1.7.1",
+  "/apple-touch-icon.png?v=1.7.1",
   "/logo-kloud.png?v=1.7.0"
 ];
 
@@ -27,12 +30,14 @@ self.addEventListener("activate", event => {
 
 self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith("/api/") || event.request.method !== "GET") return;
+  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/") || event.request.method !== "GET") return;
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        const clone = response.clone();
-        caches.open(CACHE).then(cache => cache.put(event.request, clone));
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE).then(cache => cache.put(event.request, clone));
+        }
         return response;
       })
       .catch(() => caches.match(event.request).then(match => match || caches.match("/index.html")))

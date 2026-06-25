@@ -4,10 +4,20 @@
   "description": "多人实时协作的团队资源排期矩阵",
   "start_url": "/",
   "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay"],
+  "orientation": "any",
+  "scope": "/",
+  "id": "/",
   "background_color": "#f4f6fa",
   "theme_color": "#111b2e",
   "lang": "zh-CN",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    { "src": "/pwa-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "打开团队排期", "short_name": "团队排期", "url": "/?view=overview", "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }] },
+    { "name": "打开我的日程", "short_name": "我的日程", "url": "/?view=mine", "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }] }
   ]
 }
