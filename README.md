@@ -57,6 +57,14 @@
 - 当前筛选结果导出 CSV
 - 生成横向打印页并保存为 PDF
 
+## v1.6.1 成员停用修复
+
+在 Supabase SQL Editor 完整执行：
+
+`supabase/migrations/202606250002_safe_member_archive.sql`
+
+成员现在采用安全停用，不再物理删除；历史日程、备份和操作日志都会保留。
+
 ## Supabase初始化
 
 按照 [supabase/README.md](supabase/README.md) 执行数据库迁移，并创建第一个管理员账号。

@@ -960,7 +960,7 @@ function renderTeamSettings() {
       <div class="setting-main"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(person.role)} · ${escapeHtml(person.dept)}</span></div>
       <div class="setting-actions">
         <button class="small-action edit-member" data-id="${person.id}">编辑</button>
-        <button class="small-action delete delete-member" data-id="${person.id}">删除</button>
+        <button class="small-action delete delete-member" data-id="${person.id}">停用</button>
       </div>
     </div>`).join("") : `<div class="empty-settings">还没有成员，请在上方添加。</div>`;
 
@@ -1004,11 +1004,16 @@ async function deleteMember(id) {
     showToast(`${person.name}仍有 ${assigned.length} 条日程，请先调整负责人`);
     return;
   }
-  if (!confirm(`确定删除成员“${person.name}”吗？`)) return;
-  const { error } = await supabaseClient.from("members").delete().eq("id", id);
-  if (error) return showToast(error.message);
+  if (!confirm(`确定停用成员“${person.name}”吗？历史日程和操作日志会被保留。`)) return;
+  const { error } = await supabaseClient.rpc("archive_member", { p_member_id: id });
+  if (error) {
+    const message = error.message?.includes("Could not find the function")
+      ? "请先执行 v1.6.1 成员停用修复 SQL"
+      : error.message;
+    return showToast(message || "成员停用失败");
+  }
   await loadCloudData();
-  showToast("成员已删除");
+  showToast("成员已停用，历史日程已保留");
 }
 
 function editGroup(group) {
