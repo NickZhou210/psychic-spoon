@@ -25,6 +25,7 @@ let reloadingForUpdate = false;
 let people = [];
 let teamGroups = [];
 let events = [];
+let importRows = [];
 let days = window.matchMedia("(max-width: 760px)").matches ? 7 : 14;
 let rangeStart = startOfDay(new Date());
 let enabledStatuses = new Set(["confirmed", "pending", "progress", "draft"]);
@@ -55,6 +56,8 @@ const els = Object.fromEntries([
   ,"exportPdf","exportCsv"
   ,"exportModal","exportForm","exportFormat","exportStartDate","exportEndDate"
   ,"exportModalTitle","closeExportModal","cancelExport"
+  ,"importExcel","importModal","importForm","excelFile","importSummary","importPreview"
+  ,"closeImportModal","cancelImport","confirmImport","downloadImportTemplate"
 ].map(id => [id, document.getElementById(id)]));
 
 function setSyncStatus(text, state = "connecting") {
@@ -808,6 +811,208 @@ function closeExportModal() {
   els.exportModal.classList.add("hidden");
 }
 
+function openImportModal() {
+  if (!canEditEvents()) return showToast("当前账号为只读权限");
+  importRows = [];
+  els.importForm.reset();
+  els.confirmImport.disabled = true;
+  els.importSummary.className = "import-summary";
+  els.importSummary.textContent = "选择 Excel 后会先预览，不会立即写入云端。";
+  els.importPreview.innerHTML = "";
+  els.importModal.classList.remove("hidden");
+}
+
+function closeImportModal() {
+  els.importModal.classList.add("hidden");
+}
+
+async function parseImportFile(file) {
+  if (!window.XLSX?.read) throw new Error("Excel解析组件未加载，请刷新页面后重试");
+  const buffer = await file.arrayBuffer();
+  const workbook = window.XLSX.read(buffer, { type: "array", cellDates: true });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) throw new Error("Excel文件中没有可读取的工作表");
+  const rows = window.XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { defval: "", raw: false });
+  if (!rows.length) throw new Error("第一张工作表没有数据");
+  return rows.map((row, index) => normalizeImportRow(row, index + 2));
+}
+
+function normalizeImportRow(row, rowNumber) {
+  const title = cellValue(row, ["项目名称","项目","标题","日程","活动","演出名称","任务"]);
+  const ownerName = cellValue(row, ["负责人","成员","人员","艺人","执行人","归属","owner"]);
+  const owner = findPersonByName(ownerName);
+  const startRaw = cellValue(row, ["开始时间","开始日期","开始","日期","执行日期","出发日期","start"]);
+  const endRaw = cellValue(row, ["结束时间","结束日期","结束","截止日期","完成日期","end"]);
+  const start = parseImportDateTime(startRaw, "09:00");
+  const end = parseImportDateTime(endRaw, "18:00", start);
+  const status = normalizeImportStatus(cellValue(row, ["状态","确认状态","status"]));
+  const color = normalizeColor(cellValue(row, ["颜色","色块","color"]) || nextImportDefaultColor(rowNumber));
+  const item = {
+    rowNumber,
+    event: {
+      id: null,
+      projectId: null,
+      title,
+      ownerId: owner?.id || "",
+      status,
+      start,
+      end,
+      city: cellValue(row, ["城市","地点","city"]),
+      type: cellValue(row, ["业务类型","类型","类别","项目类型","type"]) || "未分类",
+      venue: cellValue(row, ["场地","场馆","地址","venue"]),
+      notes: cellValue(row, ["备注","说明","注意事项","notes"]),
+      color,
+    },
+    ownerName,
+    errors: [],
+  };
+  if (!title) item.errors.push("缺少项目名称");
+  if (!ownerName) item.errors.push("缺少负责人");
+  else if (!owner) item.errors.push(`负责人未匹配：${ownerName}`);
+  if (!start) item.errors.push("开始时间无法识别");
+  if (!end) item.errors.push("结束时间无法识别");
+  if (start && end && new Date(end) <= new Date(start)) item.errors.push("结束时间必须晚于开始时间");
+  return item;
+}
+
+function cellValue(row, aliases) {
+  const entries = Object.entries(row);
+  for (const alias of aliases) {
+    const direct = entries.find(([key]) => normalizeColumnName(key) === normalizeColumnName(alias));
+    if (direct) return String(direct[1] ?? "").trim();
+  }
+  return "";
+}
+
+function normalizeColumnName(value) {
+  return String(value || "").replace(/\s+/g, "").replace(/[：:]/g, "").toLowerCase();
+}
+
+function findPersonByName(name) {
+  const normalized = String(name || "").trim().toLowerCase();
+  if (!normalized) return null;
+  return people.find(person => person.name.trim().toLowerCase() === normalized)
+    || people.find(person => normalized.includes(person.name.trim().toLowerCase()));
+}
+
+function normalizeImportStatus(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (["confirmed","已确认","确认","确定"].includes(raw)) return "confirmed";
+  if (["progress","进行中","执行中","inprogress"].includes(raw)) return "progress";
+  if (["draft","草稿","未定"].includes(raw)) return "draft";
+  return "pending";
+}
+
+function nextImportDefaultColor(rowNumber) {
+  return RGB_PALETTE[(events.length + rowNumber) % RGB_PALETTE.length];
+}
+
+function parseImportDateTime(value, defaultTime = "09:00", fallbackDate = "") {
+  if (value === null || value === undefined || value === "") {
+    if (!fallbackDate) return "";
+    return `${fallbackDate.slice(0, 10)}T${defaultTime}`;
+  }
+  const raw = String(value).trim();
+  if (!raw) return fallbackDate ? `${fallbackDate.slice(0, 10)}T${defaultTime}` : "";
+  const normalized = raw
+    .replace(/[年月]/g, "-")
+    .replace(/[日号]/g, "")
+    .replace(/\//g, "-")
+    .replace(/\./g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  const year = new Date().getFullYear();
+  const timeMatch = normalized.match(/(\d{1,2}):(\d{2})/);
+  const time = timeMatch ? `${timeMatch[1].padStart(2,"0")}:${timeMatch[2]}` : defaultTime;
+  const datePart = normalized.split(" ")[0];
+  let match = datePart.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (match) return `${match[1]}-${match[2].padStart(2,"0")}-${match[3].padStart(2,"0")}T${time}`;
+  match = datePart.match(/^(\d{1,2})-(\d{1,2})$/);
+  if (match) return `${year}-${match[1].padStart(2,"0")}-${match[2].padStart(2,"0")}T${time}`;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? "" : toLocalInput(parsed);
+}
+
+function renderImportPreview() {
+  const valid = importRows.filter(row => !row.errors.length);
+  const invalid = importRows.length - valid.length;
+  els.confirmImport.disabled = !valid.length;
+  els.importSummary.className = `import-summary ${invalid ? "error" : "ok"}`;
+  els.importSummary.textContent = invalid
+    ? `识别到 ${importRows.length} 行，其中 ${valid.length} 行可导入、${invalid} 行会跳过。标红行请修改 Excel 后重新导入。`
+    : `识别到 ${valid.length} 条有效日程。确认后将写入云端，并同步到所有设备。`;
+  els.importPreview.innerHTML = `<table><thead><tr>
+    <th>行号</th><th>项目</th><th>负责人</th><th>时间</th><th>城市/场地</th><th>类型</th><th>状态</th><th>备注</th><th>结果</th>
+  </tr></thead><tbody>${importRows.slice(0, 80).map(row => {
+    const event = row.event;
+    const owner = personById(event.ownerId);
+    return `<tr class="${row.errors.length ? "invalid" : ""}">
+      <td>${row.rowNumber}</td>
+      <td>${escapeHtml(event.title)}</td>
+      <td>${escapeHtml(owner?.name || row.ownerName)}</td>
+      <td>${escapeHtml(event.start || "-")}<br>至 ${escapeHtml(event.end || "-")}</td>
+      <td>${escapeHtml(event.city || "")}<br>${escapeHtml(event.venue || "")}</td>
+      <td>${escapeHtml(event.type)}</td>
+      <td>${escapeHtml(event.status)}</td>
+      <td>${escapeHtml(event.notes || "")}</td>
+      <td class="import-row-error">${escapeHtml(row.errors.join("；") || "可导入")}</td>
+    </tr>`;
+  }).join("")}</tbody></table>`;
+}
+
+async function importExcelSchedules() {
+  if (!canEditEvents()) return showToast("当前账号为只读权限");
+  const validRows = importRows.filter(row => !row.errors.length);
+  if (!validRows.length) return showToast("没有可导入的日程");
+  els.confirmImport.disabled = true;
+  els.confirmImport.textContent = "导入中…";
+  try {
+    for (const row of validRows) {
+      const event = row.event;
+      const { error } = await supabaseClient.rpc("save_schedule", {
+        p_assignment_id: null,
+        p_project_id: null,
+        p_member_id: event.ownerId,
+        p_title: event.title,
+        p_start_at: event.start,
+        p_end_at: event.end,
+        p_status: event.status,
+        p_city: event.city || "",
+        p_business_type: event.type || "未分类",
+        p_venue: event.venue || "",
+        p_notes: event.notes || "",
+        p_color: event.color || nextDefaultEventColor(),
+      });
+      if (error) throw error;
+    }
+    await loadCloudData();
+    if (currentView === "activity") await loadActivityLogs();
+    closeImportModal();
+    showToast(`已导入 ${validRows.length} 条日程`);
+  } catch (error) {
+    els.importSummary.className = "import-summary error";
+    els.importSummary.textContent = error.message || "导入失败";
+    els.confirmImport.disabled = false;
+  } finally {
+    els.confirmImport.textContent = "确认导入";
+  }
+}
+
+function downloadImportTemplate() {
+  const rows = [
+    ["项目名称","负责人","开始时间","结束时间","城市","场地","业务类型","状态","备注","颜色"],
+    ["品牌发布会","张三",`${isoDate(new Date())} 09:00`,`${isoDate(new Date())} 18:00`,"上海","展览中心","发布会","待确认","联系人/集合时间等","#ef4444"],
+  ];
+  const csv = "\ufeff" + rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "K-Loud导入模板.csv";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function exportScheduleCsv(startDate, endDate) {
   const statusText = { confirmed:"已确认", pending:"待确认", progress:"进行中", draft:"草稿" };
   const exportEvents = eventsForExport(startDate, endDate);
@@ -1158,6 +1363,33 @@ async function init() {
   els.eventColor.addEventListener("input", () => {
     els.eventColorValue.textContent = els.eventColor.value.toUpperCase();
   });
+  els.importExcel.addEventListener("click", openImportModal);
+  els.closeImportModal.addEventListener("click", closeImportModal);
+  els.cancelImport.addEventListener("click", closeImportModal);
+  els.downloadImportTemplate.addEventListener("click", downloadImportTemplate);
+  els.importModal.addEventListener("click", event => {
+    if (event.target === els.importModal) closeImportModal();
+  });
+  els.excelFile.addEventListener("change", async () => {
+    const file = els.excelFile.files?.[0];
+    if (!file) return;
+    els.confirmImport.disabled = true;
+    els.importSummary.className = "import-summary";
+    els.importSummary.textContent = "正在解析 Excel…";
+    els.importPreview.innerHTML = "";
+    try {
+      importRows = await parseImportFile(file);
+      renderImportPreview();
+    } catch (error) {
+      importRows = [];
+      els.importSummary.className = "import-summary error";
+      els.importSummary.textContent = error.message || "Excel解析失败";
+    }
+  });
+  els.importForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    await importExcelSchedules();
+  });
   els.exportPdf.addEventListener("click", () => openExportModal("pdf"));
   els.exportCsv.addEventListener("click", () => openExportModal("csv"));
   els.closeExportModal.addEventListener("click", closeExportModal);
@@ -1298,7 +1530,7 @@ async function init() {
   });
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {
-      closeModal(); closeExportModal(); closeMemberEditor(); closeGroupEditor(); closeTeamModal();
+      closeModal(); closeImportModal(); closeExportModal(); closeMemberEditor(); closeGroupEditor(); closeTeamModal();
       document.body.classList.remove("schedule-expanded");
     }
   });

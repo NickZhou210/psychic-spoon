@@ -1,15 +1,16 @@
-const CACHE = "k-loud-shell-v20";
+const CACHE = "k-loud-shell-v21";
 const SHELL = [
   "/",
   "/index.html",
-  "/styles.css?v=1.7.1",
-  "/app.js?v=1.7.1",
+  "/styles.css?v=1.8.0",
+  "/app.js?v=1.8.0",
   "/supabase.js?v=2.108.2",
-  "/manifest.webmanifest?v=1.7.1",
-  "/pwa-192.png?v=1.7.1",
-  "/pwa-512.png?v=1.7.1",
-  "/pwa-maskable-512.png?v=1.7.1",
-  "/apple-touch-icon.png?v=1.7.1",
+  "/xlsx.full.min.js?v=0.18.5",
+  "/manifest.webmanifest?v=1.8.0",
+  "/pwa-192.png?v=1.8.0",
+  "/pwa-512.png?v=1.8.0",
+  "/pwa-maskable-512.png?v=1.8.0",
+  "/apple-touch-icon.png?v=1.8.0",
   "/logo-kloud.png?v=1.7.0"
 ];
 

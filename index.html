@@ -7,11 +7,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>K-Loud</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=1.7.1" />
-  <link rel="icon" href="./pwa-192.png?v=1.7.1" type="image/png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=1.7.1" />
+  <link rel="manifest" href="./manifest.webmanifest?v=1.8.0" />
+  <link rel="icon" href="./pwa-192.png?v=1.8.0" type="image/png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=1.8.0" />
   <meta name="apple-mobile-web-app-title" content="K-Loud" />
-  <link rel="stylesheet" href="./styles.css?v=1.7.1" />
+  <link rel="stylesheet" href="./styles.css?v=1.8.0" />
 </head>
 <body>
   <div class="auth-screen hidden" id="authScreen">
@@ -54,14 +54,14 @@
 
       <div class="sync-card">
         <span class="sync-dot"></span>
-        <div><strong>云端数据同步</strong><small id="lastSync">正在连接</small><small class="app-version">版本 1.7.1</small></div>
+        <div><strong>云端数据同步</strong><small id="lastSync">正在连接</small><small class="app-version">版本 1.8.0</small></div>
       </div>
     </aside>
 
     <main class="main-content">
       <header class="topbar">
         <div>
-          <div class="eyebrow">工作排期总览 · v1.7.1</div>
+          <div class="eyebrow">工作排期总览 · v1.8.0</div>
           <h1 id="pageTitle">团队实时排期</h1>
           <div class="mobile-sync-status" id="mobileSyncStatus">正在检查云端连接…</div>
         </div>
@@ -116,6 +116,7 @@
             <button data-days="30">30天</button>
           </div>
           <div class="export-actions">
+            <button class="icon-button" type="button" id="importExcel">导入 Excel</button>
             <button class="icon-button" type="button" id="exportPdf">导出 PDF</button>
             <button class="icon-button" type="button" id="exportCsv">导出 CSV</button>
           </div>
@@ -223,6 +224,29 @@
         <div class="footer-spacer"></div>
         <button type="button" class="icon-button" id="cancelModal">取消</button>
         <button class="primary-button" type="submit">保存并同步</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="modal-backdrop hidden nested-backdrop" id="importModal">
+    <form class="modal import-modal" id="importForm">
+      <div class="modal-header">
+        <div><span class="eyebrow">批量导入</span><h2>导入 Excel 日程</h2></div>
+        <button type="button" class="close-button" id="closeImportModal">×</button>
+      </div>
+      <div class="form-grid single-column-form">
+        <label>选择文件<input type="file" id="excelFile" accept=".xlsx,.xls,.csv" /></label>
+        <div class="import-help">
+          支持列名：项目名称、负责人、开始时间、结束时间、城市、场地、业务类型、状态、备注、颜色。负责人需和团队成员姓名一致。
+        </div>
+        <div class="import-summary" id="importSummary">选择 Excel 后会先预览，不会立即写入云端。</div>
+        <div class="import-preview" id="importPreview"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="icon-button" id="downloadImportTemplate">下载模板</button>
+        <div class="footer-spacer"></div>
+        <button class="icon-button" type="button" id="cancelImport">取消</button>
+        <button class="primary-button" type="submit" id="confirmImport" disabled>确认导入</button>
       </div>
     </form>
   </div>
@@ -351,6 +375,7 @@
   <div class="toast" id="toast"></div>
   <script>window.APP_CONFIG = __K_LOUD_CONFIG__;</script>
   <script src="./supabase.js?v=2.108.2"></script>
-  <script src="./app.js?v=1.7.1"></script>
+  <script src="./xlsx.full.min.js?v=0.18.5"></script>
+  <script src="./app.js?v=1.8.0"></script>
 </body>
 </html>

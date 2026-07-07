@@ -201,6 +201,26 @@ select { height: 38px; border: 1px solid var(--line); border-radius: 9px; backgr
   padding: 10px 12px; border-radius: 9px; background: #f4f7ff;
   color: #667085; font-size: 10px; line-height: 1.5;
 }
+.import-modal { width: min(760px, 100%); }
+.import-help, .import-summary {
+  padding: 10px 12px; border-radius: 9px; line-height: 1.55; font-size: 11px;
+}
+.import-help { color: #667085; background: #f4f7ff; }
+.import-summary { color: #344054; background: #f8fafc; border: 1px solid var(--line); }
+.import-summary.error { color: var(--red); background: var(--red-soft); border-color: #ffd0d5; }
+.import-summary.ok { color: #0f7a52; background: var(--green-soft); border-color: #b9ead6; }
+.import-preview {
+  max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 10px;
+  background: white; -webkit-overflow-scrolling: touch;
+}
+.import-preview:empty { display: none; }
+.import-preview table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 10px; }
+.import-preview th, .import-preview td {
+  border-bottom: 1px solid var(--line); padding: 8px 9px; text-align: left; vertical-align: top;
+}
+.import-preview th { position: sticky; top: 0; background: #f8fafc; z-index: 1; color: #475467; }
+.import-preview tr.invalid td { background: #fff5f6; color: #9f2532; }
+.import-preview .import-row-error { color: var(--red); font-weight: 700; }
 .span-2 { grid-column: span 2; }
 .modal-footer { padding: 14px 24px 20px; display: flex; gap: 9px; align-items: center; }
 .footer-spacer { flex: 1; }
@@ -439,7 +459,8 @@ select { height: 38px; border: 1px solid var(--line); border-radius: 9px; backgr
   .segmented { width: 100%; }
   .segmented button { flex: 1; min-height: 34px; }
   .export-actions { width: 100%; }
-  .export-actions .icon-button { flex: 1; }
+  .export-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+  .export-actions .icon-button { width: 100%; padding: 0 8px; }
   .schedule-hint { display: block; padding: 10px 12px; line-height: 1.5; }
   .legend { margin-top: 6px; flex-wrap: wrap; justify-content: flex-start; gap: 8px 12px; }
   .schedule-expand-actions { display: block; margin-top: 9px; }
@@ -486,6 +507,8 @@ select { height: 38px; border: 1px solid var(--line); border-radius: 9px; backgr
   .modal h2 { font-size: 19px; }
   .form-grid { grid-template-columns: 1fr; padding: 16px 18px; gap: 12px; }
   .form-grid input, .form-grid select, .form-grid textarea { min-height: 42px; font-size: 16px; }
+  .import-preview { max-height: 34vh; }
+  .import-preview table { min-width: 680px; }
   .span-2 { grid-column: span 1; }
   .modal-footer {
     position: sticky; bottom: 0; background: white; padding: 12px 18px calc(14px + env(safe-area-inset-bottom));

@@ -10,11 +10,13 @@ const files = [
   "apple-touch-icon.png", "pwa-192.png", "pwa-512.png", "pwa-maskable-512.png"
 ];
 const supabaseBrowserClient = path.join(root, "node_modules", "@supabase", "supabase-js", "dist", "umd", "supabase.js");
+const xlsxBrowserClient = path.join(root, "node_modules", "xlsx", "dist", "xlsx.full.min.js");
 
 await fs.rm(dist, { recursive: true, force: true });
 await fs.mkdir(dist, { recursive: true });
 for (const file of files) await fs.copyFile(path.join(root, file), path.join(dist, file));
 await fs.copyFile(supabaseBrowserClient, path.join(dist, "supabase.js"));
+await fs.copyFile(xlsxBrowserClient, path.join(dist, "xlsx.full.min.js"));
 
 const config = {
   SUPABASE_URL: process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "",
@@ -42,6 +44,9 @@ await fs.writeFile(path.join(dist, "_headers"), [
   "  Cache-Control: no-store, must-revalidate",
   "",
   "/supabase.js",
+  "  Cache-Control: public, max-age=31536000, immutable",
+  "",
+  "/xlsx.full.min.js",
   "  Cache-Control: public, max-age=31536000, immutable",
 ].join("\n"));
 await fs.writeFile(path.join(dist, "_redirects"), "# No redirect rules for Workers assets deployment.\n");
